@@ -34,7 +34,7 @@ class StanceTest extends NHAUnitTestCase
     public function testAnAttackWhileUnarmedDoesNotForceAggressive(): void
     {
         $raw = [
-            'tick' => 100, 'hp' => 40, 'inventory' => [],
+            'tick' => 100, 'hp' => 40, 'inventory' => ['metal' => 300, 'crystal' => 300],
             'alerts' => [['tick' => 95, 'kind' => 'attacked', 'by' => 7]],
         ];
 
@@ -51,7 +51,7 @@ class StanceTest extends NHAUnitTestCase
     {
         $raw = [
             'tick' => 100, 'hp' => 100,
-            'inventory' => ['kinetic_gun' => 1, 'slug' => 6],
+            'inventory' => ['kinetic_gun' => 1, 'slug' => 6, 'metal' => 300, 'crystal' => 300],
             'nearby_agents' => [['id' => 9, 'dist' => 8, 'hp' => 20]],
         ];
 
@@ -65,34 +65,81 @@ class StanceTest extends NHAUnitTestCase
     {
         $this->assertSame(
             Stance::Expansionist,
-            Stance::pick(['tick' => 100, 'in_space' => true, 'inventory' => []], 'expansionist', 0),
+            // In space there is nothing to restock FROM, so a bare hold is
+            // still the mission — see Stance::canResupply().
+            Stance::pick(['tick' => 100, 'in_space' => true, 'altitude' => 450, 'inventory' => []], 'expansionist', 0),
         );
     }
 
     /**
-     * Every non-combat state is the mission — geared or bare, rich or broke,
-     * a fat credit pile or a covered contract. The expansionist ladder arms,
-     * stockpiles and banks a glut as tactics; none of that is a separate stance.
+     * Every non-combat state with the shelves STOCKED is the mission — geared
+     * or bare of kit, rich or broke, a fat credit pile or a covered contract.
+     * The expansionist ladder arms, stockpiles and banks a glut as tactics;
+     * none of that is a separate stance. (An empty cupboard now is — see the
+     * resupply-chain test below.)
      *
      * @covers \NHA\Brain\Stance
      */
     public function testEveryNonCombatStateRanksExpansionist(): void
     {
+        $stocked = ['metal' => 300, 'crystal' => 300];
         $states = [
-            'geared on Earth' => ['tick' => 100, 'inventory' => ['kinetic_gun' => 1, 'slug' => 6, 'stimpack' => 1]],
-            'bare on Earth' => ['tick' => 100, 'inventory' => ['wood' => 20]],
-            'fat pile + glut' => ['tick' => 100, 'inventory' => ['credits' => 5000, 'brine' => 140]],
+            'geared on Earth' => ['tick' => 100, 'inventory' => $stocked + ['kinetic_gun' => 1, 'slug' => 6, 'stimpack' => 1]],
+            'bare on Earth' => ['tick' => 100, 'inventory' => $stocked + ['wood' => 20]],
+            'fat pile + glut' => ['tick' => 100, 'inventory' => $stocked + ['credits' => 5000, 'brine' => 140]],
             'fat pile + covered contract' => [
                 'tick' => 100,
-                'inventory' => ['credits' => 5000, 'iron' => 20],
+                'inventory' => $stocked + ['credits' => 5000, 'iron' => 20],
                 'contracts' => [['id' => 1, 'want' => ['iron' => 10]]],
             ],
-            'fat pile, nothing to trade' => ['tick' => 100, 'inventory' => ['credits' => 5000, 'iron' => 20]],
+            'fat pile, nothing to trade' => ['tick' => 100, 'inventory' => $stocked + ['credits' => 5000, 'iron' => 20]],
         ];
 
         foreach ($states as $label => $raw) {
             $this->assertSame(Stance::Expansionist, Stance::pick($raw, 'expansionist', 0), $label);
         }
+    }
+
+    /**
+     * The resupply chain: an empty cupboard on Earth's ground takes over the
+     * turn, hands to research once the shelves are full, and hands back to the
+     * mission when the grants dry up. Each leg tests its own exit, and the
+     * entry/exit marks differ so it cannot flap.
+     *
+     * @covers \NHA\Brain\Stance
+     */
+    public function testTheResupplyChainRunsRestockThenResearchThenTheMission(): void
+    {
+        $ground = static fn(array $inv): array => ['tick' => 100, 'altitude' => 0, 'inventory' => $inv, 'vehicles' => []];
+
+        // Blocked on materials → restocking is the turn.
+        self::assertSame(Stance::Quartermaster, Stance::pick($ground(['metal' => 3, 'crystal' => 40]), 'expansionist', 0));
+
+        // Part-way back up, still under the exit mark → it does NOT hand back
+        // early. This is the hysteresis: one threshold for both would return a
+        // cupboard that is bare again a single build later.
+        self::assertSame(Stance::Quartermaster, Stance::pick($ground(['metal' => 120, 'crystal' => 120]), 'quartermaster', 0));
+
+        // Shelves full → research next, not straight back to the mission.
+        $full = ['metal' => 300, 'crystal' => 300];
+        self::assertSame(Stance::Researcher, Stance::pick($ground($full), 'quartermaster', 0));
+
+        // Research pays and there is stock to cut a combine from → stay.
+        self::assertSame(Stance::Researcher, Stance::pick($ground($full), 'researcher', 0, true));
+
+        // Grants dry up → fly.
+        self::assertSame(Stance::Expansionist, Stance::pick($ground($full), 'researcher', 0, false));
+
+        // A finished ship outranks a thin cupboard — never ground a ready hull
+        // through an open window over a metal count.
+        $withShip = $ground(['metal' => 3, 'crystal' => 3]);
+        $withShip['vehicles'] = [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 400]];
+        self::assertSame(Stance::Expansionist, Stance::pick($withShip, 'expansionist', 0));
+
+        // …and neither does running dry mid-mission, where there is nothing to
+        // restock from.
+        $atBody = ['tick' => 100, 'inventory' => ['metal' => 1], 'expansion' => ['at_body' => 'mars']];
+        self::assertSame(Stance::Expansionist, Stance::pick($atBody, 'expansionist', 0));
     }
 
     /**
@@ -104,7 +151,7 @@ class StanceTest extends NHAUnitTestCase
      */
     public function testAStaleNonMissionStanceIsCorrectedImmediately(): void
     {
-        $raw = ['tick' => 105, 'inventory' => ['wood' => 20]];
+        $raw = ['tick' => 105, 'inventory' => ['wood' => 20, 'metal' => 300, 'crystal' => 300]];
 
         $this->assertSame(Stance::Expansionist, Stance::pick($raw, 'homestead', 100));
         $this->assertSame(Stance::Expansionist, Stance::pick($raw, 'capitalist', 100));
@@ -118,7 +165,7 @@ class StanceTest extends NHAUnitTestCase
      */
     public function testAggressivePreemptsAndThenHandsBackToTheMission(): void
     {
-        $armed = ['kinetic_gun' => 1, 'slug' => 6];
+        $armed = ['kinetic_gun' => 1, 'slug' => 6, 'metal' => 300, 'crystal' => 300];
 
         $underFire = ['tick' => 105, 'hp' => 90, 'inventory' => $armed, 'alerts' => [['tick' => 104, 'kind' => 'attacked', 'by' => 7]]];
         $this->assertSame(Stance::Aggressive, Stance::pick($underFire, 'expansionist', 100));

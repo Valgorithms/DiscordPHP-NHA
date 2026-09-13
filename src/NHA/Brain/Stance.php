@@ -26,6 +26,14 @@ namespace NHA\Brain;
  *                     turn: gear a ship on Earth, fly, colonise, terraform.
  *                     Arming, stockpiling and banking a surplus are tactics the
  *                     expansionist ladder already does in service of the flight.
+ *  - `quartermaster` — the cupboard is bare and every build is blocked on it.
+ *                     Restocking IS the turn. Live, the agent spent a whole
+ *                     evening alternating sell-a-lot / buy-a-little-metal /
+ *                     build-one-part / broke-again, finishing a part an hour.
+ *  - `researcher`   — restocked, and holding raws deep enough to cut a fresh
+ *                     `combine` from. Catch up on the research the resupply
+ *                     just paid for — the drive recipe is undocumented and
+ *                     inventor points are a real way through — then fly.
  *  - `aggressive`   — you are being attacked and can fight back. Survival is a
  *                     precondition for the mission, so this pre-empts it; then
  *                     it hands straight back to `expansionist`.
@@ -42,6 +50,31 @@ enum Stance: string
     case Aggressive = 'aggressive';
     case Capitalist = 'capitalist';
     case Expansionist = 'expansionist';
+    case Quartermaster = 'quartermaster';
+    case Researcher = 'researcher';
+
+    /**
+     * The lines every build actually consumes: a flyer part costs 8-10 `metal`
+     * and 1-2 `crystal`, so these two decide whether the agent can do anything
+     * at all on the ground.
+     */
+    public const RESTOCK_LINES = ['metal', 'crystal'];
+
+    /**
+     * Drop below this on any {@see RESTOCK_LINES} line and restocking becomes
+     * the whole turn — a handful of parts' worth, low enough that the agent is
+     * genuinely blocked rather than merely thrifty.
+     */
+    public const RESTOCK_ENTER = 60;
+
+    /**
+     * …and it stays in `quartermaster` until EVERY line is back to here. The
+     * gap between the two marks is the hysteresis: leaving at the entry
+     * threshold hands back a cupboard that is bare again one build later,
+     * which is the sell / buy / build / broke cycle this stance exists to end.
+     * Matches {@see Ladder::MINE_RESEEK_FLOOR}, the mining baseline.
+     */
+    public const RESTOCK_EXIT = 250;
 
     /** Do not flip stance more often than this (world ticks) unless combat forces it. */
     public const MIN_DWELL_TICKS = 40;
@@ -56,20 +89,52 @@ enum Stance: string
      * @param string              $current      The stance in force (its `value`).
      * @param int                 $lastSwitchAt World tick the stance last changed.
      */
-    public static function pick(array $raw, string $current, int $lastSwitchAt): self
+    public static function pick(array $raw, string $current, int $lastSwitchAt, bool $researchPaying = false): self
     {
         $now = (int) ($raw['tick'] ?? 0);
         $currentStance = self::tryFrom($current) ?? self::Expansionist;
-        $want = self::rank($raw);
+        $want = self::rank($raw, $currentStance, $researchPaying);
 
         if ($want === $currentStance) {
             return $currentStance;
         }
-        if ($want === self::Aggressive || $want === self::Expansionist || ($now - $lastSwitchAt) >= self::MIN_DWELL_TICKS) {
+        // The resupply chain (quartermaster -> researcher -> the mission) is a
+        // sequence, not a preference: each leg ends when its own work is done,
+        // so none of them waits on the dwell timer either.
+        if ($want === self::Aggressive || $want === self::Expansionist
+            || $want === self::Quartermaster || $want === self::Researcher
+            || ($now - $lastSwitchAt) >= self::MIN_DWELL_TICKS
+        ) {
             return $want;
         }
 
         return $currentStance;
+    }
+
+    /** Whether any {@see RESTOCK_LINES} line has fallen under {@see RESTOCK_ENTER}. */
+    public static function understocked(array $raw): bool
+    {
+        $inv = (array) ($raw['inventory'] ?? []);
+        foreach (self::RESTOCK_LINES as $res) {
+            if ((int) ($inv[$res] ?? 0) < self::RESTOCK_ENTER) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Whether EVERY {@see RESTOCK_LINES} line is back to {@see RESTOCK_EXIT}. */
+    public static function restocked(array $raw): bool
+    {
+        $inv = (array) ($raw['inventory'] ?? []);
+        foreach (self::RESTOCK_LINES as $res) {
+            if ((int) ($inv[$res] ?? 0) < self::RESTOCK_EXIT) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -80,7 +145,7 @@ enum Stance: string
      * expansionist ladder already arms, stockpiles and banks a glut as tactics
      * in service of the flight.
      */
-    private static function rank(array $raw): self
+    private static function rank(array $raw, self $current = self::Expansionist, bool $researchPaying = false): self
     {
         $inv = (array) ($raw['inventory'] ?? []);
         $has = static fn(string $k): int => (int) ($inv[$k] ?? 0);
@@ -97,8 +162,74 @@ enum Stance: string
             }
         }
 
+        // The resupply chain. Running dry is not a reason to keep flailing at
+        // the mission one part an hour — restock properly, spend the surplus on
+        // the research it enables, and only then fly:
+        //
+        //   quartermaster --restocked--> researcher --nothing left to learn--> expansionist
+        //
+        // Each leg tests its OWN exit, which is why the entry and exit marks
+        // differ ({@see RESTOCK_ENTER} / {@see RESTOCK_EXIT}): one threshold
+        // for both would hand back to the mission with a cupboard that is bare
+        // again a single build later.
+        if (self::Quartermaster === $current) {
+            return self::restocked($raw) ? self::Researcher : self::Quartermaster;
+        }
+        if (self::Researcher === $current) {
+            // Hold only while research is actually paying out AND there is
+            // something to cut a combine from — otherwise the mission resumes.
+            return $researchPaying && self::hasResearchStock($raw) ? self::Researcher : self::Expansionist;
+        }
+        if (self::understocked($raw) && self::canResupply($raw)) {
+            return self::Quartermaster;
+        }
+
         // Everything else is the mission.
         return self::Expansionist;
+    }
+
+    /**
+     * Restocking is only a strategy where the depot and the deposits are:
+     * Earth's ground. Running low mid-crossing, in orbit, or standing on Mars
+     * is not a reason to abandon the mission — there is nothing to restock
+     * FROM out there, and a stance that says "do not fly while short" would
+     * strand the agent exactly where flying is the only way home.
+     */
+    private static function canResupply(array $raw): bool
+    {
+        $expansion = (array) ($raw['expansion'] ?? []);
+
+        // A finished ship outranks a thin cupboard: if there is already an
+        // orbital hull on the pad, the mission has a live path this turn and
+        // restocking can wait until it does not. Otherwise a low metal count
+        // would ground a ready ship through an open window.
+        if (Ladder::hasOrbitalShip($raw)) {
+            return false;
+        }
+
+        return ! (bool) ($raw['in_space'] ?? false)
+            && 0 === (int) ($raw['altitude'] ?? 0)
+            && null === ($expansion['transit'] ?? null)
+            && null === ($expansion['at_body'] ?? null)
+            && null === ($expansion['at_body_orbit'] ?? null);
+    }
+
+    /**
+     * Whether two raws sit deep enough to cut a speculative `combine` from
+     * without eating the reserve — the same bar {@see Ladder} uses for its own
+     * research rung. Without it the agent could sit in `researcher` holding
+     * nothing to research with.
+     */
+    private static function hasResearchStock(array $raw): bool
+    {
+        $deep = 0;
+        foreach ((array) ($raw['inventory'] ?? []) as $k => $qty) {
+            if ('credits' !== $k && is_numeric($qty) && (int) $qty >= Ladder::RESEARCH_SURPLUS) {
+                ++$deep;
+            }
+        }
+
+        return $deep >= 2;
     }
 
     /** The stance-specific block spliced into the system prompt. */
@@ -117,6 +248,16 @@ enum Stance: string
                 . 'spent. `fulfill` a contract whose `want` you already cover, or `sell` a glut past its cap, then pour '
                 . 'the cash into ship parts, `heat_shield` / `acid_skin` inputs, or an open colony / terraform / Station '
                 . 'board. Do not day-trade for its own sake.',
+            self::Quartermaster => 'STANCE: QUARTERMASTER (restock, then hand on) — the cupboard is bare and every '
+                . 'build is blocked on it, so this turn is about SUPPLY, not the flight. `sell` a real lot of whatever '
+                . 'glut you are sitting on (not a token 20), `mine`/`chop` the deposit under your feet until it is '
+                . 'worked out, and `buy` metal and crystal in quantity. Do NOT gear, ride or depart while short — '
+                . 'finishing a part an hour is how the last evening was lost. Fill up and the mission resumes on its own.',
+            self::Researcher => 'STANCE: RESEARCHER (spend the surplus on what you do not know) — you are restocked '
+                . 'and the raws are deep enough to gamble with. `combine` fresh, uninvented tag sets from the surplus '
+                . 'while you have it: the drive recipe is undocumented, inventing it is the way through, and each '
+                . 'grant pays inventor points. Argue the physics before you file — the Guild charges 50 credits per '
+                . 'filing and refunds it only if granted. When the surplus thins or the grants dry up, fly.',
             self::Expansionist => 'STANCE: EXPANSIONIST — drive for the Solar Accord (Mars terraformed, Venus held, a '
                 . 'Moon base). On a body: `land_body`/`land_moon`, then `construct{shape:colony|extractor|terraform}` '
                 . 'and fund the board — this is the win. In Earth orbit with a fuelled ion-thruster ship and an open '

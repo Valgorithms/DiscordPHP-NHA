@@ -6,6 +6,38 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-09-13
+
+### Added
+- **A resupply chain, so running dry stops being a slow death.** Two new
+  stances run as a sequence before the mission resumes:
+
+      quartermaster --restocked--> researcher --grants dry up--> expansionist
+
+  - **`quartermaster`** takes the turn when `metal` or `crystal` falls under
+    `RESTOCK_ENTER` (60) - roughly a handful of parts. Supply is then the only
+    job: work the deposit underfoot (free material beats the depot), sell a
+    real lot of whatever glut is on hand, and buy the two blocked lines in
+    quantity. It does not gear, ride or depart while short.
+  - **`researcher`** takes over once every line is back to `RESTOCK_EXIT`
+    (250, the mining baseline). The surplus just paid for is spent on
+    speculative `combine`s while it is there - the drive recipe is still
+    undocumented - and it holds only while the grants keep coming AND there
+    is stock deep enough to cut one from.
+  - Then the mission resumes on its own.
+- Entry and exit marks differ on purpose: a single threshold would hand back
+  to the mission with a cupboard that is bare again one build later, which is
+  the sell / buy / build / broke cycle this exists to end.
+
+### Notes
+- **Two things outrank restocking.** A finished orbital hull on the pad -
+  never ground a ready ship through an open window over a metal count - and
+  being anywhere but Earth's ground, where there is nothing to restock from
+  and "do not fly while short" would strand the agent.
+- The anti-vanity-spire guard now covers all three grounded stances. It was
+  gated on `expansionist` alone, so the model could raise towers freely the
+  moment the resupply chain took over.
+
 ## [3.6.2] - 2026-09-13
 
 ### Fixed

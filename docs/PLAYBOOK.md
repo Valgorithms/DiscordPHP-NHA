@@ -39,7 +39,7 @@ flowchart TD
     capfeed --> colony["on a body surface &#8594; GET /colony/&#123;body&#125;<br/>&#40;best-effort; empty board otherwise&#41;"]
     colony --> downed{downed?}
     downed -- yes --> skipD[["&#129657; skip"]]
-    downed -- no --> stance["Stance::pick &#8594; aggressive &#40;defend&#41; / expansionist &#40;the mission&#41;<br/>&#40;persisted&#41;"]
+    downed -- no --> stance["Stance::pick &#8594; aggressive &#40;defend&#41; / quartermaster &#8594; researcher &#8594; expansionist<br/>&#40;the resupply chain, then the mission; persisted&#41;"]
     stance --> combat{Ladder::defensiveAction<br/>&#40;recent attack / robber / hostile closing while hurt&#41;?}
     combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#8594; submit &amp; record, skip the brain entirely"]]
     combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets"]
@@ -262,7 +262,7 @@ flowchart TD
     r1b -- yes --> deploy[["deploy — passive mining income"]]
     r1b -- no --> r1c{"&#40;1c&#41; out of combat AND<br/>no medicine / weapon / ammo?"}
     r1c -- yes --> arm[["buy stimpack &#8594; buy kinetic_gun &#8594; buy slug &#215;5"]]
-    r1c -- no --> r1d{"&#40;1d&#41; a stance-specific nudge?<br/>aggressive: top ammo / close on prey<br/>capitalist: fulfil a contract / bank a surplus<br/>expansionist: extractor / dock / walk to elevator"}
+    r1c -- no --> r1d{"&#40;1d&#41; a stance-specific nudge?<br/>aggressive: top ammo / close on prey<br/>quartermaster: work the deposit / sell a lot / buy metal + crystal<br/>researcher: cut a fresh combine from the surplus<br/>capitalist: fulfil a contract / bank a surplus<br/>expansionist: extractor / dock / walk to elevator"}
     r1d -- yes --> stanced[["the stance move"]]
     r1d -- no --> r2{"&#40;2&#41; allowSpeculation AND &#8805; 2 raws<br/>at 60+ each &#40;a real surplus, not the stockpile&#41;<br/>AND a fresh untried/unknown pair exists"}
     r2 -- yes --> combine[["combine &#123;a,b&#125; — inventor gamble &#40;luxury: surplus only&#41;"]]

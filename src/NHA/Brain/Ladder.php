@@ -1902,6 +1902,57 @@ final class Ladder
             }
         }
 
+        // QUARTERMASTER — the cupboard is bare and every build is blocked on
+        // it. Supply is the whole turn: work the deposit underfoot, convert a
+        // glut to cash, and buy the two lines a part actually eats. Nothing
+        // here rides an elevator or departs; {@see Stance::restocked()} hands
+        // on to `researcher` the moment the shelves are full.
+        if ($stance === Stance::Quartermaster->value) {
+            // 1. Free material first — a deposit under our feet costs only the
+            //    turn, where the depot costs credits we do not have.
+            foreach ((array) ($raw['nearby_deposits'] ?? []) as $d) {
+                $d = (array) $d;
+                $res = (string) ($d['resource'] ?? '');
+                if ($res === '' || (int) ($d['dist'] ?? 9) !== 0 || (int) ($d['amount'] ?? 0) < 1) {
+                    continue;
+                }
+                $verb = $res === 'wood' ? 'chop' : (in_array($res, ['herb', 'lichen', 'fungus', 'algae'], true) ? 'gather' : 'mine');
+
+                return ['verb' => $verb, 'args' => ['n' => min((int) $d['amount'], 15)], 'why' => "quartermaster — work the {$res} under your feet before spending a credit"];
+            }
+
+            // 2. Buy the blocked lines outright, deepest shortfall first.
+            $short = null;
+            foreach (Stance::RESTOCK_LINES as $res) {
+                $held = (int) ($inv[$res] ?? 0);
+                if ($held < Stance::RESTOCK_EXIT && ($short === null || $held < $short[1])) {
+                    $short = [$res, $held];
+                }
+            }
+            if ($short !== null) {
+                [$res, $held] = $short;
+                if (($top = self::affordableBuy($res, Stance::RESTOCK_EXIT - $held, $credits)) !== null) {
+                    return ['verb' => $top['verb'], 'args' => $top['args'], 'why' => "quartermaster — restock {$top['n']} {$res} ({$held}/" . Stance::RESTOCK_EXIT . ')'];
+                }
+                // 3. Cannot afford it: turn a glut into credits. This is the
+                //    rung the old flow never reached, because the mission
+                //    stance kept trying to build with an empty purse.
+                if (($cash = self::raiseCashStep($inv, 100)) !== null) {
+                    return ['verb' => $cash['verb'], 'args' => $cash['args'], 'why' => 'quartermaster — ' . $cash['why']];
+                }
+            }
+        }
+
+        // RESEARCHER — restocked, so spend the surplus on what we do not know
+        // before flying. The speculative-combine rung below already picks the
+        // set; this stance simply makes sure it is reached instead of being
+        // pre-empted by a flight rung.
+        if ($stance === Stance::Researcher->value && $allowSpeculation) {
+            if (($spec = self::speculativeCombine($raws, $tried, $worldKnown, $plan)) !== null) {
+                return $spec;
+            }
+        }
+
         if ($stance === Stance::Capitalist->value) {
             // Work an open contract you already cover.
             foreach ((array) ($raw['contracts'] ?? []) as $c) {

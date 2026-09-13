@@ -973,9 +973,12 @@ final class AutoPlayer
                 : resolve([]);
 
             // Pick and persist the strategic stance for this turn (hysteresis in
-            // Stance::pick keeps it from flip-flopping).
+            // Stance::pick keeps it from flip-flopping). `$researchPaying` is
+            // read here rather than further down because the resupply chain
+            // needs it: `researcher` holds only while the grants keep coming.
+            $researchPaying = $this->state->noteInventorPoints($agent_id, (int) ($observation->get('inventor_points') ?? 0));
             $stancePrev = $this->state->getStance($agent_id);
-            $stance = Stance::pick($rawObs, $stancePrev['stance'], $stancePrev['tick'])->value;
+            $stance = Stance::pick($rawObs, $stancePrev['stance'], $stancePrev['tick'], $researchPaying)->value;
             $this->state->setStance($agent_id, $stance, $tick);
 
             // Combat overrides everything — defend before consulting the brain
@@ -1009,7 +1012,6 @@ final class AutoPlayer
                 $known[$sig] = true;
             }
             $tried = $this->state->getTriedCombineSignatures($agent_id);
-            $researchPaying = $this->state->noteInventorPoints($agent_id, (int) ($observation->get('inventor_points') ?? 0));
 
             $recent = $this->state->getRecentDecisions($agent_id, 12);
 
@@ -1202,7 +1204,13 @@ final class AutoPlayer
                     && in_array((string) ($decision['args']['shape'] ?? ''), ['box', 'cylinder', 'sphere', 'cone', 'pyramid'], true);
                 if (($vanityTower || in_array($verb, ['ride', 'launch', 'depart'], true))
                     && $loopObjective === null
-                    && $stance === Stance::Expansionist->value
+                    // Every stance that is grounded and working toward the
+                    // flight, not just the mission one: a vanity spire is no
+                    // better a use of a quartermaster's or a researcher's turn,
+                    // and gating this on `expansionist` alone let the model
+                    // raise towers freely the moment the resupply chain took
+                    // over.
+                    && in_array($stance, [Stance::Expansionist->value, Stance::Quartermaster->value, Stance::Researcher->value], true)
                     && ! (bool) ($observation->get('in_space') ?? false)
                     && (int) ($observation->get('altitude') ?? 0) === 0
                 ) {
