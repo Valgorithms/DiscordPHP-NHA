@@ -972,14 +972,7 @@ final class AutoPlayer
                 )
                 : resolve([]);
 
-            // Pick and persist the strategic stance for this turn (hysteresis in
-            // Stance::pick keeps it from flip-flopping). `$researchPaying` is
-            // read here rather than further down because the resupply chain
-            // needs it: `researcher` holds only while the grants keep coming.
             $researchPaying = $this->state->noteInventorPoints($agent_id, (int) ($observation->get('inventor_points') ?? 0));
-            $stancePrev = $this->state->getStance($agent_id);
-            $stance = Stance::pick($rawObs, $stancePrev['stance'], $stancePrev['tick'], $researchPaying)->value;
-            $this->state->setStance($agent_id, $stance, $tick);
 
             // Combat overrides everything — defend before consulting the brain
             // or the loop guard. Heal, shoot back, or break contact.
@@ -1066,6 +1059,17 @@ final class AutoPlayer
             $shipStranded = ! $inTransit
                 && Ladder::hasOrbitalShip($rawObs)
                 && ! Ladder::hasDepartCapableShip($rawObs, $departSelectSkip);
+            // Pick and persist the strategic stance for this turn (hysteresis in
+            // Stance::pick keeps it from flip-flopping). This sits AFTER
+            // `$shipStranded` on purpose: the resupply chain must know whether
+            // there is a usable hull, and "usable" is not "owns an orbital
+            // vehicle" — the agent owns 48 of those and cannot fly one to the
+            // only body still on the table. Asking the cheap question instead
+            // kept `quartermaster` from ever engaging.
+            $stancePrev = $this->state->getStance($agent_id);
+            $stance = Stance::pick($rawObs, $stancePrev['stance'], $stancePrev['tick'], $researchPaying, ! $shipStranded && Ladder::hasDepartCapableShip($rawObs, $departSelectSkip))->value;
+            $this->state->setStance($agent_id, $stance, $tick);
+
             $holdingForWindow = ! $shipStranded && ! $inTransit && (
                 Ladder::isHoldingForWindow($rawObs, $stance, $departUnreachable)
                 || ($departCooldown && ($rawObs['in_space'] ?? false) && Ladder::hasOrbitalShip($rawObs))

@@ -130,11 +130,16 @@ class StanceTest extends NHAUnitTestCase
         // Grants dry up → fly.
         self::assertSame(Stance::Expansionist, Stance::pick($ground($full), 'researcher', 0, false));
 
-        // A finished ship outranks a thin cupboard — never ground a ready hull
+        // A USABLE ship outranks a thin cupboard — never ground a ready hull
         // through an open window over a metal count.
         $withShip = $ground(['metal' => 3, 'crystal' => 3]);
         $withShip['vehicles'] = [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 400]];
-        self::assertSame(Stance::Expansionist, Stance::pick($withShip, 'expansionist', 0));
+        self::assertSame(Stance::Expansionist, Stance::pick($withShip, 'expansionist', 0, false, true));
+
+        // …but OWNING orbital hulls is not the same as having one that can
+        // reach anywhere still worth going. The agent holds 48 of them and
+        // cannot fly one to the only body left; restocking must still engage.
+        self::assertSame(Stance::Quartermaster, Stance::pick($withShip, 'expansionist', 0, false, false));
 
         // …and neither does running dry mid-mission, where there is nothing to
         // restock from.

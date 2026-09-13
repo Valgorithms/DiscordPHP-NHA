@@ -6,6 +6,21 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-09-13
+
+### Fixed
+- **`quartermaster` could never engage.** Its "a finished ship outranks a thin
+  cupboard" guard asked `Ladder::hasOrbitalShip()` — and the agent owns **48**
+  orbital hulls, not one of which can reach the only body still on the table.
+  The guard answered "flight-ready, carry on" every single turn. It now takes
+  the answer from `AutoPlayer`, which knows which bodies are still worth going
+  to, so the test is a USABLE ship rather than merely owning one. The stance
+  pick moved below `$shipStranded` to have that answer available.
+
+### Lesson
+- "Do we have a ship?" and "can we get anywhere?" are different questions, and
+  a hoarder's inventory is exactly where they diverge.
+
 ## [3.7.0] - 2026-09-13
 
 ### Added

@@ -89,11 +89,11 @@ enum Stance: string
      * @param string              $current      The stance in force (its `value`).
      * @param int                 $lastSwitchAt World tick the stance last changed.
      */
-    public static function pick(array $raw, string $current, int $lastSwitchAt, bool $researchPaying = false): self
+    public static function pick(array $raw, string $current, int $lastSwitchAt, bool $researchPaying = false, ?bool $flightReady = null): self
     {
         $now = (int) ($raw['tick'] ?? 0);
         $currentStance = self::tryFrom($current) ?? self::Expansionist;
-        $want = self::rank($raw, $currentStance, $researchPaying);
+        $want = self::rank($raw, $currentStance, $researchPaying, $flightReady);
 
         if ($want === $currentStance) {
             return $currentStance;
@@ -145,7 +145,7 @@ enum Stance: string
      * expansionist ladder already arms, stockpiles and banks a glut as tactics
      * in service of the flight.
      */
-    private static function rank(array $raw, self $current = self::Expansionist, bool $researchPaying = false): self
+    private static function rank(array $raw, self $current = self::Expansionist, bool $researchPaying = false, ?bool $flightReady = null): self
     {
         $inv = (array) ($raw['inventory'] ?? []);
         $has = static fn(string $k): int => (int) ($inv[$k] ?? 0);
@@ -180,7 +180,7 @@ enum Stance: string
             // something to cut a combine from — otherwise the mission resumes.
             return $researchPaying && self::hasResearchStock($raw) ? self::Researcher : self::Expansionist;
         }
-        if (self::understocked($raw) && self::canResupply($raw)) {
+        if (self::understocked($raw) && self::canResupply($raw, $flightReady)) {
             return self::Quartermaster;
         }
 
@@ -195,15 +195,20 @@ enum Stance: string
      * FROM out there, and a stance that says "do not fly while short" would
      * strand the agent exactly where flying is the only way home.
      */
-    private static function canResupply(array $raw): bool
+    private static function canResupply(array $raw, ?bool $flightReady = null): bool
     {
         $expansion = (array) ($raw['expansion'] ?? []);
 
-        // A finished ship outranks a thin cupboard: if there is already an
-        // orbital hull on the pad, the mission has a live path this turn and
-        // restocking can wait until it does not. Otherwise a low metal count
-        // would ground a ready ship through an open window.
-        if (Ladder::hasOrbitalShip($raw)) {
+        // A USABLE ship outranks a thin cupboard: with a live path to a body
+        // this turn, restocking waits until there is not one. Never ground a
+        // ready hull through an open window over a metal count.
+        //
+        // `$flightReady` comes from {@see AutoPlayer}, which knows which
+        // bodies are still worth going to; falling back to "owns an orbital
+        // vehicle" would answer yes for an agent sitting on 48 hulls that can
+        // none of them reach the one body left, and `quartermaster` would
+        // never engage at all.
+        if ($flightReady ?? Ladder::hasOrbitalShip($raw)) {
             return false;
         }
 
