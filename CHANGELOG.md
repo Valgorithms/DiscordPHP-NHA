@@ -6,6 +6,34 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-09-13
+
+### Changed
+- **Mining now works a deposit properly instead of topping up and wandering
+  off.** A deposit is a place and walking to one costs turns, so the point of
+  going is to come back full. Two new marks give the behaviour hysteresis:
+  - `Ladder::MINE_STOCK_TARGET` (1,000) - the high-water mark. Standing on a
+    deposit, the agent keeps working it to here rather than to the thin
+    `RESOURCE_TARGET` (30). At ~15 units a turn that is roughly 60 turns of
+    committed work.
+  - `Ladder::MINE_RESEEK_FLOOR` (250) - the low-water mark. It only goes
+    LOOKING for a deposit again once a resource has fallen this far, not the
+    moment it dips below a craft floor. The gap between the two marks is what
+    stops it oscillating between "top up" and "do something else".
+- The sell rung no longer fights the band. `capFor()` used to shed anything
+  over `HOARD_CAP` (80), which would have read a freshly mined 1,000 as a
+  hoard and sold it straight back down; the cap now sits above the stockpile
+  the band is deliberately building. A genuine credit emergency still sells,
+  but keeps the baseline rather than a token 10 - selling under it only
+  triggers a re-seek and spends the next hour re-mining what was just sold.
+  A pile already under the baseline is still fair game when the alternative
+  is being broke.
+
+### Notes
+- The band sits below every rung that matters (combat, the flight kit, a
+  colony board), so it fills idle time rather than competing with the
+  mission.
+
 ## [3.5.6] - 2026-09-13
 
 ### Added

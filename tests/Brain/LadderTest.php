@@ -49,13 +49,19 @@ class LadderTest extends NHAUnitTestCase
      */
     public function testSuggestionSellsOnlyWhenCreditsAreBelowTheFloor(): void
     {
-        $ground = fn(int $credits): array => self::ground(['credits' => $credits, 'wood' => 50]);
+        $ground = fn(int $credits): array => self::ground(['credits' => $credits, 'wood' => 900]);
 
-        // Below the 300 floor → sell the surplus (keep 10).
+        // Below the 300 floor → sell the surplus. The keep floor is now the
+        // mining baseline, not a token 10: selling under it would only trigger
+        // a re-seek and spend the next hour re-mining what was just sold.
         $poor = Ladder::suggestion($ground(100), [], [], false);
         $this->assertSame('sell', $poor['verb']);
         $this->assertSame('wood', $poor['args']['resource']);
         $this->assertSame(20, $poor['args']['n']);
+
+        // A pile already under the baseline is still sellable in an emergency.
+        $thin = Ladder::suggestion(self::ground(['credits' => 100, 'wood' => 50]), [], [], false);
+        $this->assertSame('sell', $thin['verb']);
 
         // Healthy credits → it never reaches a sell (buys toward a tower instead).
         $rich = Ladder::suggestion($ground(1000), [], [], false);
@@ -73,14 +79,20 @@ class LadderTest extends NHAUnitTestCase
             'nearby_deposits' => [['resource' => 'wood', 'amount' => 50, 'x' => 1, 'y' => 1, 'dist' => 0]],
         ];
 
-        // Holding 20 — under the old "< 15" bar it would stop, now it tops up to 30.
+        // Standing on a deposit it works it up to the HIGH-water mark, a turn
+        // at a time (harvest verbs move ~15 units), not to a thin craft floor.
         $s = Ladder::suggestion($onDeposit(20), [], [], false);
         $this->assertSame('chop', $s['verb']);
-        $this->assertSame(10, $s['args']['n'], 'harvest exactly up to the 30 target');
+        $this->assertSame(15, $s['args']['n'], 'a full turn of harvesting, not a 10-unit top-up');
 
-        // Already at target — do not keep harvesting.
-        $atTarget = Ladder::suggestion($onDeposit(30), [], [], false);
-        $this->assertNotSame('chop', $atTarget['verb']);
+        // Well past the old 30 target and still going — this is the point of
+        // the band: come back from a deposit full.
+        $mid = Ladder::suggestion($onDeposit(600), [], [], false);
+        $this->assertSame('chop', $mid['verb']);
+
+        // At the high-water mark → stop and do something else.
+        $full = Ladder::suggestion($onDeposit(Ladder::MINE_STOCK_TARGET), [], [], false);
+        $this->assertNotSame('chop', $full['verb']);
     }
 
     /**
@@ -102,7 +114,7 @@ class LadderTest extends NHAUnitTestCase
         // Not gearing (no ship objective) → defaults, no widening.
         $this->assertSame([], Ladder::shipMaterialPlan(['in_space' => false, 'altitude' => 0, 'inventory' => []]));
         $this->assertSame(Ladder::RESOURCE_TARGET, Ladder::floorFor('metal', []));
-        $this->assertSame(Ladder::HOARD_CAP, Ladder::capFor('metal', []));
+        $this->assertSame(Ladder::MINE_STOCK_TARGET + Ladder::HOARD_CAP, Ladder::capFor('metal', []), 'the sell cap must sit above the stockpile the band builds');
 
         // Gearing, ship barely started → metal floor climbs toward the bill (capped),
         // and the sell cap rises above the default so metal is not dumped.
@@ -1243,5 +1255,58 @@ class LadderTest extends NHAUnitTestCase
         self::assertSame('buy', $buy['verb']);
         self::assertSame('cryo_fuel', $buy['args']['resource']);
         self::assertStringContainsString('120/238', $buy['why']);
+    }
+
+    /**
+     * The mining band has hysteresis: it fills to the high-water mark while
+     * standing on a deposit, and only goes LOOKING for one again once the pile
+     * has fallen to the low-water baseline. The gap between the two is what
+     * stops it oscillating between "top up" and "do something else".
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testMiningFillsToTheHighWaterMarkAndOnlyReseeksAtTheBaseline(): void
+    {
+        $nearDeposit = static fn(int $held): array => [
+            'tick' => 1, 'in_space' => false, 'altitude' => 0,
+            // `brine` so the sell rung (which only deals in depot-tradeable
+            // lines) cannot pre-empt the seek being tested here, and credits
+            // just under the tower rung's 300 so that cannot either.
+            'inventory' => self::KIT + ['credits' => 250, 'brine' => $held],
+            // dist 3 — in view, not underfoot, so this is the SEEK decision.
+            'nearby_deposits' => [['resource' => 'brine', 'amount' => 500, 'x' => 9, 'y' => 9, 'dist' => 3]],
+        ];
+
+        // Holding well over the old 30 target but under the baseline → still
+        // worth the walk.
+        $seek = Ladder::suggestion($nearDeposit(120), [], [], false);
+        self::assertSame('move', $seek['verb']);
+        self::assertStringContainsString('brine', $seek['why']);
+
+        // In the band (above the baseline, below the target) → does NOT set off
+        // for a deposit. This is the half that used to thrash.
+        $inBand = Ladder::suggestion($nearDeposit(Ladder::MINE_RESEEK_FLOOR + 50), [], [], false);
+        self::assertNotSame('move', $inBand['verb'] ?? null, 'inside the band it does not set off for a deposit');
+
+        // …but standing ON it, the same holding keeps mining toward the target.
+        $onIt = $nearDeposit(Ladder::MINE_RESEEK_FLOOR + 50);
+        $onIt['nearby_deposits'][0]['dist'] = 0;
+        $work = Ladder::suggestion($onIt, [], [], false);
+        self::assertSame('mine', $work['verb']);
+
+        // The sell rung must not undo the stockpile it just built: a full
+        // tradeable pile with healthy credits is not a hoard to dump.
+        $rich = [
+            'tick' => 1, 'in_space' => false, 'altitude' => 0,
+            'inventory' => self::KIT + ['credits' => 1000, 'iron' => Ladder::MINE_STOCK_TARGET],
+        ];
+        self::assertNotSame('sell', Ladder::suggestion($rich, [], [], false)['verb'], 'a deliberate stockpile is not a hoard to dump');
+
+        // Broke, though, and it sells — but never below the baseline.
+        $broke = $rich;
+        $broke['inventory']['credits'] = 20;
+        $sell = Ladder::suggestion($broke, [], [], false);
+        self::assertSame('sell', $sell['verb']);
+        self::assertLessThanOrEqual(Ladder::MINE_STOCK_TARGET - Ladder::MINE_RESEEK_FLOOR, $sell['args']['n']);
     }
 }

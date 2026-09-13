@@ -54,6 +54,31 @@ final class Ladder
     public const HOARD_CAP = 80;
 
     /**
+     * The high-water mark for a resource the agent is actively working: once
+     * it commits to a deposit it stays on it until it holds this much, rather
+     * than topping up to a thin {@see RESOURCE_TARGET} and wandering off.
+     *
+     * A deposit is a place, and walking to one costs turns; the point of going
+     * is to come back full. Harvest verbs move ~15 units a turn, so this is
+     * roughly 60 turns of committed work — deliberately a long stretch, and
+     * deliberately below every rung that matters (combat, the flight kit, a
+     * colony board), so it fills the idle time rather than competing with the
+     * mission.
+     */
+    public const MINE_STOCK_TARGET = 1000;
+
+    /**
+     * The low-water mark that sends it back out. Seeking a new deposit only
+     * starts once a resource has fallen THIS far, not the moment it dips below
+     * the target — the gap between the two is what stops the agent
+     * oscillating between "top up" and "do something else" on every turn.
+     *
+     * Standing on a deposit it keeps mining to {@see MINE_STOCK_TARGET}; it
+     * only goes looking again below this.
+     */
+    public const MINE_RESEEK_FLOOR = 250;
+
+    /**
      * Fuel units (cryo_fuel / hydrogen / helium3, counted 1:1) to have on hand
      * before a transfer is worth attempting. `dv_capacity` in the engine is
      * `dv = 900·L / (mass + 5·L)` for an ion ship (~880 mass); clearing the
@@ -350,12 +375,15 @@ final class Ladder
                 continue;
             }
             $held = $raws[$res] ?? 0;
-            $floor = self::floorFor($res, $plan);
+            // Standing on it: work it up to the HIGH-water mark, not the thin
+            // craft floor. Walking to a deposit costs turns, so the point of
+            // being here is to leave full — see MINE_STOCK_TARGET.
+            $floor = max(self::MINE_STOCK_TARGET, self::floorFor($res, $plan));
             if ($held < $floor) {
                 $verb = $res === 'wood' ? 'chop' : (in_array($res, ['herb', 'lichen', 'fungus', 'algae'], true) ? 'gather' : 'mine');
                 $n = min((int) ($d['amount'] ?? 10), $floor - $held, 15);
                 if ($n >= 1) {
-                    $tag = $floor > self::RESOURCE_TARGET ? ' — a pending craft needs it' : ' — standing on a deposit';
+                    $tag = ($plan[$res] ?? 0) > self::RESOURCE_TARGET ? ' — a pending craft needs it' : ' — standing on a deposit, filling up';
 
                     return ['verb' => $verb, 'args' => ['n' => $n], 'why' => "stockpiling {$res} ({$held}/{$floor})" . $tag];
                 }
@@ -404,7 +432,14 @@ final class Ladder
             $sellCap = self::capFor($sellRes, $plan);
             $overHoardCap = $raws[$sellRes] >= $sellCap;
             if ($needCredits || $overHoardCap) {
-                $keep = ($needCredits && $raws[$sellRes] <= $keepFloor) ? 10 : $keepFloor;
+                // A credit emergency sells down to the mining baseline, not to
+                // a token 10 — dropping under it just triggers a re-seek and
+                // spends the next hour re-mining what was sold. Only a pile
+                // ALREADY under the baseline gets dug into, and then only
+                // because the alternative is being broke.
+                $keep = $needCredits
+                    ? ($raws[$sellRes] > self::MINE_RESEEK_FLOOR ? self::MINE_RESEEK_FLOOR : min(10, $keepFloor))
+                    : max($keepFloor, self::MINE_RESEEK_FLOOR);
                 $n = min($raws[$sellRes] - $keep, 20);
                 if ($n >= 1) {
                     return [
@@ -432,7 +467,11 @@ final class Ladder
                 continue;
             }
             $held = $raws[$res] ?? 0;
-            $floor = self::floorFor($res, $plan);
+            // The OTHER half of the band: go looking again only once a
+            // resource has fallen to the low-water mark. Re-seeking the moment
+            // it dips under the craft floor is what made the agent oscillate
+            // between topping up and doing something else.
+            $floor = max(self::MINE_RESEEK_FLOOR, self::floorFor($res, $plan));
             if ($held < $floor && $floor - $held > $wantGap) {
                 $wantRes = $res;
                 $wantFloor = $floor;
@@ -968,15 +1007,22 @@ final class Ladder
     }
 
     /**
-     * Sell cap for one resource: the default {@see HOARD_CAP}, or the pending
+     * Sell cap for one resource: the stockpile the mining band is deliberately
+     * building ({@see MINE_STOCK_TARGET}) plus a margin, or the pending
      * craft's need plus a small buffer when that is higher — so a `sell` never
-     * dumps material an upcoming craft is about to consume.
+     * dumps material an upcoming craft, or a deliberate stockpile, is holding.
+     *
+     * The old {@see HOARD_CAP} (80) would have fought the band outright: the
+     * agent mines up to 1,000 and the very next turn reads it as "hoarding"
+     * and starts selling it back down. A genuine credit emergency still sells
+     * (see rung 4) — that path keeps {@see MINE_RESEEK_FLOOR} instead, which
+     * is the same baseline that sends it back out to mine.
      *
      * @param array<string,int> $plan a {@see shipMaterialPlan()} result
      */
     public static function capFor(string $res, array $plan): int
     {
-        return max(self::HOARD_CAP, ($plan[$res] ?? 0) + 10);
+        return max(self::MINE_STOCK_TARGET + self::HOARD_CAP, ($plan[$res] ?? 0) + 10);
     }
 
     /**
