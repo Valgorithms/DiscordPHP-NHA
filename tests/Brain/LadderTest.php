@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use NHA\Brain\GameData;
 use NHA\Brain\Ladder;
 
 /**
@@ -1312,5 +1313,35 @@ class LadderTest extends NHAUnitTestCase
         $sell = Ladder::suggestion($broke, [], [], false);
         self::assertSame('sell', $sell['verb']);
         self::assertLessThanOrEqual(Ladder::MINE_STOCK_TARGET - Ladder::MINE_RESEEK_FLOOR, $sell['args']['n']);
+    }
+
+    /**
+     * The bundle the rebuild aims at must be able to reach every body that is
+     * still on the table — otherwise the agent builds it perfectly, finds
+     * itself still stranded, and rebuilds forever. The old mix (3 engines,
+     * 2 propellers, 3 wings) massed 856 and failed Venus's thrust-to-weight
+     * gate, which was the whole of the "stuck building a ship" loop once
+     * deimos, phobos and mars were all colony-done and Venus was all that was
+     * left.
+     *
+     * @covers \NHA\Brain\Ladder::SHIP_BUNDLE_TARGET
+     */
+    public function testTheTargetBundleCanActuallyReachEveryBody(): void
+    {
+        $recipe = [];
+        foreach (Ladder::SHIP_BUNDLE_TARGET as $part => $count) {
+            $recipe[$part] = [$count, Ladder::SHIP_PART_UPGRADE[$part] ?? null];
+        }
+        $s = GameData::assess($recipe);
+
+        self::assertTrue($s['flies']);
+        self::assertTrue($s['orbital_engine']);
+        foreach (['deimos', 'phobos', 'mars', 'venus'] as $body) {
+            self::assertTrue($s['depart'][$body] ?? false, "the target bundle must clear {$body}'s thrust-to-weight gate");
+        }
+
+        // …and carry enough fuel to actually make the crossing it now qualifies
+        // for: dv = 900L/(mass+5L) >= 130 needs L >= 130·mass/250.
+        self::assertGreaterThanOrEqual((int) ceil(130 * $s['mass'] / 250), $s['fuel_cap'], 'venus-capable on thrust but not on tankage is still stranded');
     }
 }

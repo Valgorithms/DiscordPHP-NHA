@@ -1580,8 +1580,8 @@ final class Ladder
      * @var array<string,int>
      */
     public const SHIP_BUNDLE_TARGET = [
-        'frame' => 1, 'cockpit' => 1, 'jet' => 1, 'engine' => 3, 'propeller' => 2,
-        'wing' => 3, 'tail' => 1, 'fuel_tank' => 2, 'landing_gear' => 1,
+        'frame' => 1, 'cockpit' => 1, 'jet' => 1, 'engine' => 2, 'propeller' => 3,
+        'wing' => 2, 'tail' => 1, 'fuel_tank' => 2, 'landing_gear' => 1,
     ];
 
     /**

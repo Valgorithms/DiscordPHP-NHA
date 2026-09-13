@@ -6,6 +6,31 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.6.2] - 2026-09-13
+
+### Fixed
+- **The rebuild was aiming at a ship that could not reach the only
+  destination left.** `SHIP_BUNDLE_TARGET` (3 engines, 2 propellers, 3 wings)
+  masses **856** and fails Venus's thrust-to-weight gate. With deimos, phobos
+  and mars all colony-done, Venus is the only body still on the table - so
+  `hasDepartCapableShip()` was false no matter how perfectly the agent built
+  the bundle. It finished one, found itself still stranded, and started over.
+  Forever. That, not any single looping verb, is what "stuck building a ship"
+  actually was.
+- Retargeted to **2 engines, 3 propellers, 2 wings** (same 14 parts, and
+  cheaper - propellers are bare metal while engines need an `engine` item).
+  Propellers multiply engine power into thrust, so the lighter mix keeps the
+  full 2,800 thrust at **721** mass and clears every gate including Venus,
+  while keeping both fuel tanks - 600 capacity against the 375 units the
+  crossing needs. Venus-capable on thrust but not on tankage is still
+  stranded, so a test now pins both halves.
+
+### Lesson
+- Check that the GOAL is reachable before debugging the pursuit of it. Six
+  releases went into the agent's behaviour while the target it was building
+  toward could not have worked; the engine's own `assess()` had the answer
+  all along and was never asked.
+
 ## [3.6.1] - 2026-09-13
 
 ### Fixed
