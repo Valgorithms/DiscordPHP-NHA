@@ -1821,6 +1821,39 @@ final class AutoPlayer
                     $this->state->recordRide($agent_id, $tick);
                 }
 
+                // LAST GATE ON EVERY `buy`, whatever produced it.
+                //
+                // This is the third separate rung caught ordering a quantity
+                // the purse could not cover — 3.5.0 (cryo_fuel n:30 at 16/unit,
+                // 419 refusals and the treasury from 7,183 to 158), 3.5.1
+                // (metal n:20 in the craft-spin breaker), and now the
+                // fresh-flyer frame rung, "need 200 credits (have 68)" every
+                // turn. A refused buy changes nothing in the observation, so
+                // the identical order re-fires forever; it is the single most
+                // reliable way to wedge this agent.
+                //
+                // Patching rungs one at a time has not worked, so price it
+                // HERE instead, after every override has had its say: clamp
+                // `n` to what the credits actually buy, and when not even one
+                // unit is affordable, sell a glut instead — the only move that
+                // changes the inputs to the decision.
+                if (($decision['verb'] ?? '') === 'buy') {
+                    $inv = (array) $observation->getInventory();
+                    $purse = (int) ($inv['credits'] ?? $rawObs['credits'] ?? 0);
+                    $res = (string) (($decision['args'] ?? [])['resource'] ?? '');
+                    $want = (int) (($decision['args'] ?? [])['n'] ?? 1);
+                    if ($res !== '' && $want > 0 && isset(GameData::DEPOT_UNIT_COST[$res])) {
+                        if (($sized = Ladder::affordableBuy($res, $want, $purse)) !== null) {
+                            if ($sized['n'] < $want) {
+                                $decision['args']['n'] = $sized['n'];
+                                $decision['reason'] = (string) ($decision['reason'] ?? '') . " (sized {$want}→{$sized['n']} to {$purse} credits)";
+                            }
+                        } elseif (($cash = Ladder::raiseCashStep($inv)) !== null) {
+                            $decision = ['verb' => 'sell', 'args' => $cash['args'], 'reason' => "cannot afford 1 {$res} at {$purse} credits — " . $cash['why']];
+                        }
+                    }
+                }
+
                 if (($decision['verb'] ?? '') === 'combine') {
                     $this->state->recordCombineSignature($agent_id, self::combineSignature((array) ($decision['args'] ?? [])));
                 }

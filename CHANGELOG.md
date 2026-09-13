@@ -6,6 +6,30 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.5.6] - 2026-09-13
+
+### Added
+- **Every `buy` is now priced against the purse at the last gate**, after
+  every override has had its say, whatever rung produced it. `n` is clamped
+  to what the credits actually cover, and when not even one unit is
+  affordable the decision becomes a `sell` of the biggest tradeable glut -
+  the only move that changes the inputs.
+
+### Fixed
+- The fresh-flyer frame rung was ordering `buy {metal, n:20}` (200 credits)
+  on a 68-credit purse: *"need 200 credits (have 68)"*, **477 times in a
+  row**. This is the THIRD rung caught doing exactly this - 3.5.0
+  (`cryo_fuel n:30`, 419 refusals, treasury 7,183 → 158) and 3.5.1 (`metal
+  n:20` in the craft-spin breaker) were the first two. Hence the central
+  gate above rather than a fourth per-rung patch.
+
+### Lesson
+- When the same defect appears in a third place, stop fixing instances and
+  move the check to the boundary they all pass through. A refused intent
+  changes nothing in the observation, which makes "order something you
+  cannot afford" a perfect infinite loop - it must be impossible to express,
+  not merely absent from the rungs audited so far.
+
 ## [3.5.5] - 2026-09-13
 
 ### Fixed

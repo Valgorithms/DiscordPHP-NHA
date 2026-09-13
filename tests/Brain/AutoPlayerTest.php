@@ -1970,4 +1970,58 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertFalse(AutoPlayer::dockedToAsteroid([]));
         self::assertFalse(AutoPlayer::dockedToAsteroid([$rec('dock', 'rejected', 'no asteroid in range')]));
     }
+
+    /**
+     * Every `buy` is priced against the purse at the last gate, whichever rung
+     * produced it. Three separate rungs have now been caught ordering a
+     * quantity the credits could not cover, and a refused buy changes nothing
+     * in the observation — so the identical order re-fires forever.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testABuyIsAlwaysSizedToThePurse(): void
+    {
+        $state = new StateStore($this->statePath);
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            // metal is 10/unit: 68 credits buys 6, never the 20 asked for.
+            'inventory' => ['credits' => 68, 'metal' => 8, 'iron' => 900,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"buy","args":{"resource":"metal","n":20}}'), $state);
+        $player->step(142287, 'tok');
+
+        $post = $this->posts[0][1];
+        if ('buy' === $post['verb']) {
+            self::assertSame(6, $post['args']['n'], '20 metal costs 200; the purse holds 68');
+        } else {
+            self::assertSame('sell', $post['verb']);
+        }
+    }
+
+    /**
+     * …and when not even one unit is affordable, it sells a glut instead of
+     * repeating an order the engine will refuse every time.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnUnaffordableBuyBecomesASellInstead(): void
+    {
+        $state = new StateStore($this->statePath);
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 3, 'metal' => 1, 'iron' => 900,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"buy","args":{"resource":"metal","n":20}}'), $state);
+        $player->step(142287, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertSame('sell', $post['verb'], 'cannot afford one unit — raise cash rather than re-fire the refusal');
+        self::assertSame('iron', $post['args']['resource']);
+    }
 }
