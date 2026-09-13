@@ -67,6 +67,12 @@ final class Ladder
      */
     public const MINE_STOCK_TARGET = 1000;
 
+    /** Least worth sending to a colony board — below this the transaction is noise. */
+    public const INVEST_MIN = 50;
+
+    /** Most to send in one go, so a single turn cannot empty the treasury. */
+    public const INVEST_MAX = 500;
+
     /**
      * The low-water mark that sends it back out. Seeking a new deposit only
      * starts once a resource has fallen THIS far, not the moment it dips below
@@ -641,7 +647,41 @@ final class Ladder
             return false;
         }
 
-        return array_diff(GameData::GEAR_BODIES, $unreachable) !== [];
+        return self::liveDestinations($unreachable) !== [];
+    }
+
+    /**
+     * The bodies still worth departing for: every destination the world has,
+     * minus the ones this agent has written off (`depart`-rejected for good) or
+     * already funded to its cap.
+     *
+     * This is measured against ALL FOUR destinations, not {@see
+     * GameData::GEAR_BODIES}. That three-body list was the single worst dead
+     * end in the brain: `GEAR_BODIES` is `deimos, phobos, mars`, so the moment
+     * those three were colony-funded — which is exactly where the agent stood —
+     * `hasDepartCapableShip()` returned false for EVERY hull, forever. The
+     * agent could not consider itself flight-ready again no matter what it
+     * built, so it rebuilt the same flyer for nine hours while Venus, the one
+     * body still open, sat unconsidered because it was not in the list.
+     *
+     * Venus was originally left out because it needs TWR 0.9 and an
+     * `acid_skin`, and {@see departTarget()} skips a body whose arrival items
+     * are missing WITHOUT recording a rejection — so it could never enter
+     * `$unreachable` and would keep a stranded hull looking capable. That is
+     * survivable and the exclusion was not: a missing `acid_skin` has its own
+     * ladder rung that crafts or buys one, and a hull that is merely too heavy
+     * gets a real `depart` rejection the moment it tries, which DOES enter
+     * `$unreachable`. Both paths make progress; the exclusion made none.
+     *
+     * @param list<string> $unreachable dests written off (state: `agent_depart_unreachable` + colony-done)
+     *
+     * @return list<string>
+     *
+     * @since 3.8.0
+     */
+    public static function liveDestinations(array $unreachable = []): array
+    {
+        return array_values(array_diff(array_keys(self::DEPART_ORDER), $unreachable));
     }
 
     /**
@@ -731,6 +771,56 @@ final class Ladder
         // +5% so a rounding edge or a few units burned in the meantime does
         // not leave it one unit short and holding all over again.
         return (int) ceil($need * $mass / $denom * 1.05);
+    }
+
+    /**
+     * What to do when there is nowhere left to fly.
+     *
+     * Every body written off or funded to our cap is a REAL state, not a bug —
+     * and it used to have no branch at all, so the agent fell through to
+     * "gear a flyer" and rebuilt one forever. There is plenty of work that is
+     * not gated on departing:
+     *
+     *   1. `invest` credits into a colony module that is still short. The
+     *      engine takes money from anywhere now — no landing required — and a
+     *      FINISHED colony is worth more to this agent than another hull: it
+     *      cuts Mars and Venus Δv by 5 world-wide and unlocks the warp-gate
+     *      blueprint, which turns a 90-tick crossing into 6 at a fifth of the
+     *      fuel. That is the only thing that reopens the map.
+     *   2. Failing that, the caller's co-op `say` asks the other agents to
+     *      close what our cap will not let us.
+     *
+     * Returns `null` when there is no open module or no credits, so the caller
+     * falls through to research / building points rather than stalling.
+     *
+     * @param array<string,mixed> $board a `GET /colony/{body}` payload
+     *
+     * @since 3.8.0
+     */
+    public static function endgameInvest(array $board, int $agent_id, int $credits): ?array
+    {
+        if ($credits < self::INVEST_MIN) {
+            return null;
+        }
+        $module = self::colonyNextModule($board);
+        $body = (string) ($board['body'] ?? '');
+        $key = (string) ($module['module'] ?? '');
+        if ($module === null || $body === '' || $key === '') {
+            return null;
+        }
+
+        // Keep a working float — being broke is its own dead end, and the
+        // quartermaster chain exists precisely to avoid going back there.
+        $spend = min($credits - self::CREDIT_FLOOR, self::INVEST_MAX);
+        if ($spend < self::INVEST_MIN) {
+            return null;
+        }
+
+        return [
+            'verb' => 'invest',
+            'args' => ['body' => $body, 'module' => $key, 'credits' => $spend],
+            'why' => "nowhere left to fly — put {$spend} credits into {$body}/{$key}; finishing it cuts Mars+Venus Δv by 5 world-wide and unlocks the warp gate",
+        ];
     }
 
     /**

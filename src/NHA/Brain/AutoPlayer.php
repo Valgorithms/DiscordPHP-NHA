@@ -228,6 +228,17 @@ final class AutoPlayer
      *
      * @return array{verb: string, args: array<string,mixed>, reason: string}
      */
+    /**
+     * Rebuilds in a row that may end with an unusable hull before the agent
+     * stops trying and spends its turns on work that is not gated on flying
+     * ({@see endgameDecision()}). Three is enough for a genuine recipe drift to
+     * be corrected by the ladder and not so many that a broken target bundle
+     * costs an evening.
+     *
+     * @since 3.8.0
+     */
+    public const REBUILD_GENERATION_CAP = 3;
+
     private static function idle(array $raw, string $reason): array
     {
         $n = Ladder::noop($raw, $reason);
@@ -858,6 +869,12 @@ final class AutoPlayer
                     // observe/intent window race does not spam it); a
                     // thrust-to-weight / capability rejection also parks that
                     // destination as unreachable for the run.
+                    // An ACCEPTED depart proves the hull works: the rebuild
+                    // generation counter exists only to stop endless futile
+                    // rebuilds, so a hull that actually flew resets it.
+                    if ($lastDepartDest !== '' && $status === 'applied') {
+                        $this->state->clearRebuildGenerations($agent_id);
+                    }
                     if ($lastDepartDest !== '' && $status === 'rejected') {
                         $why = strtolower((string) ($s->result ?? ''));
                         // Permanent for THIS hull: thrust-to-weight it can never
@@ -1056,7 +1073,22 @@ final class AutoPlayer
             // Already departed — riding the interplanetary transfer. Every
             // flight verb is rejected mid-crossing; the only move is to wait.
             $inTransit = Ladder::inTransit($rawObs);
+            // Two different "nowhere to go"s, and conflating them is what kept
+            // the agent rebuilding for nine hours:
+            //
+            //  - NOTHING WORTH FLYING TO — every body funded to our cap. No
+            //    hull, however good, changes that, so building one is pure
+            //    waste. This is a real terminal state the brain had no name
+            //    for; it just kept gearing flyers. The rebuild-generation cap
+            //    lands here too, as a backstop against the finalize → clear
+            //    verdicts → reject → rebuild cycle running unbounded.
+            //  - THIS HULL CANNOT SERVE any body that IS worth flying to — a
+            //    genuine dead-end hull, and a better one really does fix it.
+            //    That is the rebuild, and it stays.
+            $noDestinations = Ladder::liveDestinations($this->state->colonyDoneBodies($agent_id)) === []
+                || $this->state->rebuildGenerations($agent_id) >= self::REBUILD_GENERATION_CAP;
             $shipStranded = ! $inTransit
+                && ! $noDestinations
                 && Ladder::hasOrbitalShip($rawObs)
                 && ! Ladder::hasDepartCapableShip($rawObs, $departSelectSkip);
             // Pick and persist the strategic stance for this turn (hysteresis in
@@ -1110,7 +1142,7 @@ final class AutoPlayer
 
             $altNow = (int) ($observation->get('altitude') ?? 0);
 
-            return $colonyBoardPromise->then(fn(array $colonyBoard) => $this->brain->decide($observation, $context ?: null, $stance)->then(function (?array $decision) use ($agent_id, $token, $tick, $altNow, $observation, $rawObs, $known, $tried, $dead, $researchPaying, $recent, $loop, $loopObjective, $stance, $holdingForWindow, $departNow, $departServiceable, $departCooldown, $rideCooldown, $departUnreachable, $departSelectSkip, $shipStranded, $inTransit, $pre, $last, $colonyBoard, $remoteBody) {
+            return $colonyBoardPromise->then(fn(array $colonyBoard) => $this->brain->decide($observation, $context ?: null, $stance)->then(function (?array $decision) use ($agent_id, $token, $tick, $altNow, $observation, $rawObs, $known, $tried, $dead, $researchPaying, $recent, $loop, $loopObjective, $stance, $holdingForWindow, $departNow, $departServiceable, $departCooldown, $rideCooldown, $departUnreachable, $departSelectSkip, $shipStranded, $inTransit, $noDestinations, $pre, $last, $colonyBoard, $remoteBody) {
                 if ($decision === null && $loopObjective === null && ! $holdingForWindow) {
                     // Record the pass so a wait-streak is visible to detectLoop.
                     $this->state->recordDecision($agent_id, ['verb' => 'wait', 'args' => [], 'reason' => '', 'queued_intent' => null, 'tick' => $tick, 'alt' => $altNow]);
@@ -1266,7 +1298,42 @@ final class AutoPlayer
                 // own block: the at-body guardrail below assumes the agent is
                 // physically on the body, and must not be handed a board for
                 // one it is nowhere near.
-                if ($remoteBody !== null && $homeBody === null && $colonyBoard !== []
+                // The colony-done flag was WRITE-ONLY: `recordColonyDone()` had
+                // a caller and `clearColonyDone()` had none. Colonies gain new
+                // modules as the world advances (the Expansion decree opened
+                // Ares Base and Aphrodite Terrace mid-run), so a body marked
+                // done can have work for us again — and nothing could ever say
+                // so. Since the set only grew, it was guaranteed to reach "all
+                // four done", which is `hasDepartCapableShip() === false`
+                // forever. This rotation already fetches those boards; read the
+                // answer off the fetch it is doing anyway.
+                if ($remoteBody !== null && $colonyBoard !== []
+                    && (array) ($colonyBoard['modules'] ?? []) !== []
+                    && Ladder::colonyFundStep($colonyBoard, $agent_id, (array) $observation->getInventory(), $rawObs) !== null
+                ) {
+                    $this->state->clearColonyDone($agent_id, $remoteBody);
+                }
+
+                // Nowhere left to fly: spend the treasury on a board instead of
+                // gearing a flyer that has no destination. A finished colony is
+                // what reopens the map (Δv -5 world-wide, and the warp-gate
+                // blueprint), so this is the highest-value thing a grounded
+                // agent can do.
+                // Rate-limited, and never over a loop break: `invest` can be
+                // refused (the engine may want materials, not money, for that
+                // line) and a refused intent leaves the observation unchanged —
+                // which is the exact shape of every spin this brain has had.
+                // This block sits AFTER the loop-break override, so it cannot
+                // lean on that to stop one.
+                if ($noDestinations && $remoteBody !== null && $colonyBoard !== []
+                    && $loopObjective === null
+                    && ! $this->state->investCooldownActive($agent_id, $remoteBody, $tick)
+                    && ($put = Ladder::endgameInvest($colonyBoard, $agent_id, (int) (((array) $observation->getInventory())['credits'] ?? 0))) !== null
+                ) {
+                    $this->state->recordInvest($agent_id, $remoteBody, $tick);
+                    $decision = ['verb' => 'invest', 'args' => $put['args'], 'reason' => (string) $put['why']];
+                    $verb = 'invest';
+                } elseif ($remoteBody !== null && $homeBody === null && $colonyBoard !== []
                     && ! $this->state->colonyCallCooldownActive($agent_id, $remoteBody, $tick)
                     && ($callout = Ladder::colonyCallForHelp($colonyBoard, $agent_id)) !== null
                 ) {
@@ -1640,6 +1707,7 @@ final class AutoPlayer
                 // to, and forcing the agent at the elevator anyway is what kept
                 // it flying round trips it could not profit from.
                 if ($stance === Stance::Expansionist->value
+                    && ! $noDestinations
                     && ! in_array($verb, ['depart', 'say'], true)
                     && ! ($rawObs['in_space'] ?? false)
                     && (int) ($observation->get('altitude') ?? 0) === 0
@@ -1878,7 +1946,54 @@ final class AutoPlayer
                             }
                         } elseif (($cash = Ladder::raiseCashStep($inv)) !== null) {
                             $decision = ['verb' => 'sell', 'args' => $cash['args'], 'reason' => "cannot afford 1 {$res} at {$purse} credits — " . $cash['why']];
+                        } else {
+                            // Broke AND nothing to sell. Emitting the buy anyway
+                            // is the old spin with extra steps ("need 10 credits
+                            // (have 8)", forever) — go and get some material
+                            // instead, which is the only thing that changes the
+                            // inputs to this decision.
+                            $decision = self::idle($rawObs, "cannot afford 1 {$res} at {$purse} credits and nothing to sell — work for it instead");
                         }
+                    }
+                }
+
+                // A `sell` beyond what is actually held is refused ("insufficient")
+                // with the observation unchanged — the same spin shape. Clamp it.
+                if (($decision['verb'] ?? '') === 'sell') {
+                    $held = (int) (((array) $observation->getInventory())[(string) (($decision['args'] ?? [])['resource'] ?? '')] ?? 0);
+                    $want = (int) (($decision['args'] ?? [])['n'] ?? 0);
+                    if ($want > $held) {
+                        if ($held < 1) {
+                            $decision = self::idle($rawObs, 'nothing of that line to sell');
+                        } else {
+                            $decision['args']['n'] = $held;
+                            $decision['reason'] = (string) ($decision['reason'] ?? '') . " (sized {$want}→{$held} to what is held)";
+                        }
+                    }
+                }
+
+                // Likewise a `build` whose bill we cannot cover. `BUILD_COST` is
+                // transcribed from the engine, so this is checkable up front
+                // rather than discovered one refusal at a time — live, 17 of the
+                // last 200 acts were "insufficient for <part>".
+                if (($decision['verb'] ?? '') === 'build') {
+                    $part = (string) (($decision['args'] ?? [])['part'] ?? '');
+                    $bill = GameData::BUILD_COST[$part] ?? [];
+                    $held = (array) $observation->getInventory();
+                    $missing = [];
+                    foreach ($bill as $res => $qty) {
+                        $short = (int) $qty - (int) ($held[$res] ?? 0);
+                        if ($short > 0) {
+                            $missing[(string) $res] = $short;
+                        }
+                    }
+                    if ($missing !== []) {
+                        $res = (string) array_key_first($missing);
+                        $acq = Ladder::affordableBuy($res, $missing[$res], (int) ($held['credits'] ?? 0))
+                            ?? Ladder::raiseCashStep($held);
+                        $decision = $acq !== null
+                            ? ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "cannot build {$part} — short " . $missing[$res] . " {$res}; get it first"]
+                            : self::idle($rawObs, "cannot build {$part} — short " . $missing[$res] . " {$res} and nothing to trade");
                     }
                 }
 
@@ -1892,6 +2007,13 @@ final class AutoPlayer
                 // that). The new hull deserves a clean slate; if the finalize
                 // fails, the verdicts are re-learned on the next depart anyway.
                 if (($decision['verb'] ?? '') === 'finalize') {
+                    // Each stranded rebuild that reaches a finalize is one
+                    // generation. Cleared again by a `depart` that is actually
+                    // accepted (see the outcome handler), so a working hull
+                    // resets the count and only repeated failure trips the cap.
+                    if ($shipStranded) {
+                        $this->state->recordRebuildGeneration($agent_id);
+                    }
                     $this->state->clearDepartRejections($agent_id);
                     // A fresh hull also clears every capability verdict a
                     // `finalize` can amend — a missing part (landing_gear), or

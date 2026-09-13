@@ -6,6 +6,70 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-09-13
+
+A dead-end audit of the whole decision path. Four structural traps, one of
+them live and the direct cause of every "stuck" report of the last two days.
+
+### Fixed
+- **`hasDepartCapableShip()` was measured against `GameData::GEAR_BODIES`** -
+  `deimos, phobos, mars` - so the moment those three were colony-funded it
+  returned **false for every hull, forever**. The agent could not consider
+  itself flight-ready again no matter what it built, which is why it rebuilt
+  the same flyer for nine hours while Venus, the one body still open, was
+  never considered: Venus is not in that list. Verified live before the fix:
+  `hasDepartCapableShip -> false`, `departTarget -> null`, with a working
+  orbital hull on the pad. It now measures against all four destinations
+  (`Ladder::liveDestinations()`).
+  - Venus was excluded because `departTarget()` skips a body whose arrival
+    items are missing WITHOUT recording a rejection, so it could never enter
+    `$unreachable`. That risk is survivable and the exclusion was not: a
+    missing `acid_skin` has a rung that crafts or buys one, and a hull that is
+    merely too heavy earns a real rejection the moment it tries. Both make
+    progress; the exclusion made none.
+- **"Nothing worth flying to" and "this hull cannot get there" were the same
+  flag.** They are now separate, because the right answer differs: a hull that
+  cannot reach a body still worth reaching should be rebuilt, and a world
+  where every body is funded to our cap should not be answered with more
+  hulls. The second case had no branch at all and fell through to "gear a
+  flyer" - a terminal state the brain had no name for.
+- **The colony-done flag was write-only.** `recordColonyDone()` had a caller;
+  `clearColonyDone()` had none. Colonies gain modules as the world advances
+  (the Expansion decree opened Ares Base and Aphrodite Terrace mid-run), so a
+  body marked done can have work for us again - and nothing could ever say so.
+  Since the set only grew, reaching "all four done" was guaranteed, and that
+  is permanent stranding. The Earth-side board rotation already fetches those
+  boards; it now reads the answer off the fetch it was making anyway.
+- **The rebuild cycle was unbounded.** A `finalize` clears every depart verdict
+  so the new hull gets a fair trial - correct, but on its own it is a closed
+  loop: finalize -> clear -> depart -> rejected -> stranded -> rebuild.
+  `REBUILD_GENERATION_CAP` (3) puts a floor under it, and a `depart` the engine
+  accepts clears the count, so the cap can never ground a working agent.
+
+### Added
+- **An endgame.** With every body funded, the agent puts credits into a colony
+  module that is still short (`invest{body,module,credits}` - the engine takes
+  money from anywhere now). A finished colony is worth more than another hull:
+  it cuts Mars and Venus Δv by 5 world-wide and unlocks the warp-gate
+  blueprint, which is the only thing that reopens the map. Rate-limited per
+  board and never over a loop break, because `invest` can be refused.
+- **Every refusable verb is now pre-validated or clamped at the last gate**,
+  closing the spin class rather than its instances:
+  - `buy` sized to the purse, and when nothing can be sold to fund it, not
+    emitted at all (it used to fall through and re-fire "need 10 credits
+    (have 8)" forever).
+  - `sell` clamped to what is actually held.
+  - `build` checked against `GameData::BUILD_COST` up front - 17 of the last
+    200 live acts were "insufficient for <part>", each one a wasted turn.
+
+### Lesson
+- A refused intent changes nothing in the observation, so *any* decision the
+  engine can refuse is a perfect infinite loop. The fix is not to catch them
+  one at a time but to make them unexpressible.
+- Check that the GOAL is reachable before debugging the pursuit of it. Six
+  releases went into behaviour while the capability test at the centre of it
+  could only ever answer "no".
+
 ## [3.7.1] - 2026-09-13
 
 ### Fixed

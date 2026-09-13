@@ -928,10 +928,15 @@ class LadderTest extends NHAUnitTestCase
         $this->assertTrue(Ladder::hasDepartCapableShip($ship));
         $this->assertTrue(Ladder::hasDepartCapableShip($ship, ['deimos', 'phobos']), 'mars still open');
         $this->assertFalse(Ladder::hasDepartCapableShip($ship, $all), 'nowhere left to go');
-        // The real stall: the three gear bodies are all rejected but venus was
-        // never listed (departTarget skips it — no acid_skin), so the old
-        // all-of-DEPART_ORDER test kept the dead hull looking "capable".
-        $this->assertFalse(Ladder::hasDepartCapableShip($ship, ['deimos', 'phobos', 'mars']), 'venus does not keep a gearless hull alive');
+        // Venus COUNTS. Excluding it (because `departTarget()` skips a body
+        // whose arrival items are missing without recording a rejection) was
+        // the worst dead end in the brain: GEAR_BODIES is deimos/phobos/mars,
+        // so once those three were colony-funded this went false for every
+        // hull forever and the agent rebuilt the same flyer for nine hours
+        // with Venus — the one body still open — never considered. A missing
+        // `acid_skin` has its own rung that crafts or buys one, and a hull
+        // that is merely too heavy earns a real rejection the moment it tries.
+        $this->assertTrue(Ladder::hasDepartCapableShip($ship, ['deimos', 'phobos', 'mars']), 'venus is still a destination');
         $this->assertFalse(Ladder::hasDepartCapableShip(['vehicles' => []], []), 'no ship at all');
 
         // On the ground with the dead-end ship + parts stock → GEAR UP a new

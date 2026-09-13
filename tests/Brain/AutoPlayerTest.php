@@ -1669,8 +1669,12 @@ class AutoPlayerTest extends NHAUnitTestCase
         $nha = $this->nhaWith([
             'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
             'in_space' => false, 'altitude' => 0,
-            'inventory' => ['credits' => 3000, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
-            'vehicles' => [['name' => 'deadend', 'flies' => true, 'orbital_engine' => true]],
+            'inventory' => ['credits' => 3000, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5,
+                'metal' => 300, 'crystal' => 300],
+            // No hull yet — gearing from scratch, so `finalize` is the move.
+            // (With a flyable hull AND a live destination the agent is now
+            // pushed toward FLYING it instead of minting a second one.)
+            'vehicles' => [],
             'loose_parts' => $bundle, 'nearby_deposits' => [],
         ]);
         $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"finalize","args":{}}'), $state);
@@ -2051,5 +2055,140 @@ class AutoPlayerTest extends NHAUnitTestCase
         $player->step(142287, 'tok');
 
         self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'the bundle has no landing_gear, tail or fuel_tank yet');
+    }
+
+    /**
+     * The terminal state, which the brain used to have no name for: every body
+     * funded to our cap, so no hull — however good — is worth building. It
+     * used to fall through to "gear a flyer" and rebuild one forever.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testWithEveryBodyFundedItStopsBuildingShipsAltogether(): void
+    {
+        $state = new StateStore($this->statePath);
+        foreach (['deimos', 'phobos', 'mars', 'venus'] as $body) {
+            $state->recordColonyDone(142287, $body);
+        }
+
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 8000, 'metal' => 300, 'crystal' => 300, 'iron' => 900,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'hull', 'flies' => true, 'orbital_engine' => true]],
+            'loose_parts' => [], 'nearby_deposits' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"sell","args":{"resource":"iron","n":20}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'nothing left to fly to — another hull changes nothing');
+    }
+
+    /**
+     * …but a hull that cannot reach a body that IS still worth flying to is a
+     * different thing entirely, and a better hull really does fix it. That
+     * rebuild stays.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAHullThatCannotReachAStillOpenBodyIsStillRebuilt(): void
+    {
+        $state = new StateStore($this->statePath);
+        // venus is open (never funded) but this hull is rejected for it.
+        $state->recordColonyDone(142287, 'deimos');
+        $state->recordColonyDone(142287, 'phobos');
+        $state->recordColonyDone(142287, 'mars');
+        $state->recordDepartRejection(142287, 'venus', 400, true);
+
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 8000, 'metal' => 300, 'crystal' => 300, 'composite' => 6, 'chip' => 2,
+                'ion_thruster' => 1, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'too-heavy', 'flies' => true, 'orbital_engine' => true]],
+            'loose_parts' => [], 'nearby_deposits' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"sell","args":{"resource":"iron","n":80}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertContains($this->posts[0][1]['verb'], ['build', 'combine', 'buy'], 'venus is still worth reaching — gear a hull that can');
+    }
+
+    /**
+     * The backstop on the rebuild cycle: a `finalize` clears every depart
+     * verdict so the new hull gets a fair trial, which on its own is unbounded
+     * (finalize → clear → depart → rejected → stranded → rebuild → …). After
+     * REBUILD_GENERATION_CAP failures the agent stops trying and spends its
+     * turns on work that is not gated on flying.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testRepeatedFailedRebuildsEventuallyStopTheRebuild(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordColonyDone(142287, 'deimos');
+        $state->recordColonyDone(142287, 'phobos');
+        $state->recordColonyDone(142287, 'mars');
+        $state->recordDepartRejection(142287, 'venus', 400, true);
+        for ($i = 0; $i < AutoPlayer::REBUILD_GENERATION_CAP; ++$i) {
+            $state->recordRebuildGeneration(142287);
+        }
+
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 8000, 'metal' => 300, 'crystal' => 300, 'iron' => 900,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'too-heavy', 'flies' => true, 'orbital_engine' => true]],
+            'loose_parts' => [], 'nearby_deposits' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"sell","args":{"resource":"iron","n":20}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'three failed generations is enough — stop minting hulls');
+
+        // …and a hull that actually departs clears the count, so the cap can
+        // never permanently ground a working agent.
+        $state->clearRebuildGenerations(142287);
+        self::assertSame(0, $state->rebuildGenerations(142287));
+    }
+
+    /**
+     * The whole spin class in one place: a verb the engine will REFUSE leaves
+     * the observation unchanged, so the identical decision re-fires forever.
+     * Every such verb is either pre-validated or clamped at the last gate.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testNoDecisionIsEmittedThatTheEngineWouldRefuseOutright(): void
+    {
+        $broke = [
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 8, 'metal' => 1, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [], 'loose_parts' => [], 'nearby_deposits' => [],
+        ];
+
+        // 1. Broke, and nothing tradeable to raise cash with → never emit the buy.
+        $p1 = new AutoPlayer($this->nhaWith($broke), $this->brainReturning('{"verb":"buy","args":{"resource":"metal","n":20}}'), new StateStore($this->statePath));
+        $p1->step(142287, 'tok');
+        self::assertNotSame('buy', $this->posts[0][1]['verb'], '8 credits cannot buy metal at 10/unit');
+
+        // 2. A sell beyond what is held is clamped to what is held…
+        $this->posts = [];
+        $withIron = $broke;
+        $withIron['inventory']['iron'] = 12;
+        $p2 = new AutoPlayer($this->nhaWith($withIron), $this->brainReturning('{"verb":"sell","args":{"resource":"iron","n":80}}'), new StateStore($this->statePath));
+        $p2->step(142287, 'tok');
+        if ('sell' === $this->posts[0][1]['verb']) {
+            self::assertLessThanOrEqual(12, $this->posts[0][1]['args']['n']);
+        }
+
+        // 3. …and a build whose bill we cannot cover never goes out as a build.
+        $this->posts = [];
+        $p3 = new AutoPlayer($this->nhaWith($broke), $this->brainReturning('{"verb":"build","args":{"part":"jet"}}'), new StateStore($this->statePath));
+        $p3->step(142287, 'tok');
+        self::assertNotSame('build', $this->posts[0][1]['verb'], 'a jet needs 10 metal + 2 crystal; there is 1 metal');
     }
 }

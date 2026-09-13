@@ -425,4 +425,65 @@ trait LoopStrategyStateTrait
     {
         return (int) ($this->data['agent_fuel_goal'][(string) $agent_id] ?? 0);
     }
+
+    /**
+     * Rebuild generations that ended with the hull still unable to reach
+     * anywhere. A `finalize` clears every depart verdict so the new hull gets a
+     * fair trial — which is right, but on its own it is an unbounded cycle:
+     * finalize → clear → depart → rejected → stranded → rebuild → finalize.
+     * Counting the generations puts a floor under it.
+     *
+     * @since 3.8.0
+     */
+    public function recordRebuildGeneration(int $agent_id): int
+    {
+        $key = (string) $agent_id;
+        $n = (int) ($this->data['agent_rebuild_gen'][$key] ?? 0) + 1;
+        $this->data['agent_rebuild_gen'][$key] = $n;
+        $this->save();
+
+        return $n;
+    }
+
+    /** How many rebuilds in a row have failed to produce a usable hull. */
+    public function rebuildGenerations(int $agent_id): int
+    {
+        return (int) ($this->data['agent_rebuild_gen'][(string) $agent_id] ?? 0);
+    }
+
+    /** A hull that actually departed proves the rebuild worked — start counting over. */
+    public function clearRebuildGenerations(int $agent_id): void
+    {
+        unset($this->data['agent_rebuild_gen'][(string) $agent_id]);
+        $this->save();
+    }
+
+    /** Ticks between two `invest` pushes at the same board. @since 3.8.0 */
+    private const INVEST_COOLDOWN_TICKS = 200;
+
+    /**
+     * Rate-limits the endgame `invest`. Any decision that can be REFUSED and
+     * still leave the observation unchanged is a loop waiting to happen — the
+     * engine may want materials rather than money for the line we are aiming
+     * at — and this one sits after the loop-break override, so it cannot rely
+     * on that to save it.
+     *
+     * @since 3.8.0
+     */
+    public function recordInvest(int $agent_id, string $body, int $tick): void
+    {
+        $this->data['agent_last_invest'][(string) $agent_id][$body] = $tick;
+        $this->save();
+    }
+
+    /** True while the last `invest` at this board is still on its cooldown. */
+    public function investCooldownActive(int $agent_id, string $body, int $tick): bool
+    {
+        $last = $this->data['agent_last_invest'][(string) $agent_id][$body] ?? null;
+        if (! is_numeric($last) || $tick <= 0) {
+            return false;
+        }
+
+        return ($tick - (int) $last) < self::INVEST_COOLDOWN_TICKS;
+    }
 }
