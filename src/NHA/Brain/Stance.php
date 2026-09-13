@@ -111,12 +111,30 @@ enum Stance: string
         return $currentStance;
     }
 
-    /** Whether any {@see RESTOCK_LINES} line has fallen under {@see RESTOCK_ENTER}. */
-    public static function understocked(array $raw): bool
+    /**
+     * Whether any {@see RESTOCK_LINES} line has fallen under
+     * {@see RESTOCK_ENTER} — or, when the agent is grounded with nowhere to
+     * fly, whether it is short of the depot lines an open colony board wants.
+     *
+     * The second case is the forward-base one: a body that cannot be reached
+     * is not a reason to idle, it is a reason to bank the materials and credits
+     * that will fund it the moment it can be — `invest{body,module,credits}`
+     * needs a treasury, and the moons' mass drivers want superalloy and nickel
+     * the depot sells.
+     *
+     * @param array<string,int> $boardWants remaining depot-buyable lines from
+     *                                      the world objective board
+     */
+    public static function understocked(array $raw, array $boardWants = []): bool
     {
         $inv = (array) ($raw['inventory'] ?? []);
         foreach (self::RESTOCK_LINES as $res) {
             if ((int) ($inv[$res] ?? 0) < self::RESTOCK_ENTER) {
+                return true;
+            }
+        }
+        foreach ($boardWants as $res => $short) {
+            if ((int) $short > 0 && (int) ($inv[(string) $res] ?? 0) < self::RESTOCK_ENTER) {
                 return true;
             }
         }
@@ -180,7 +198,7 @@ enum Stance: string
             // something to cut a combine from — otherwise the mission resumes.
             return $researchPaying && self::hasResearchStock($raw) ? self::Researcher : self::Expansionist;
         }
-        if (self::understocked($raw) && self::canResupply($raw, $flightReady)) {
+        if (self::understocked($raw, (array) ($raw['_board_wants'] ?? [])) && self::canResupply($raw, $flightReady)) {
             return self::Quartermaster;
         }
 
@@ -208,6 +226,11 @@ enum Stance: string
         // vehicle" would answer yes for an agent sitting on 48 hulls that can
         // none of them reach the one body left, and `quartermaster` would
         // never engage at all.
+        //
+        // The contrapositive is the useful half: when NOTHING is reachable,
+        // quartermaster work is exactly right. Stock the lines a forward base
+        // eats, keep the treasury able to fund a board from orbit, and stop
+        // pretending a launch is imminent.
         if ($flightReady ?? Ladder::hasOrbitalShip($raw)) {
             return false;
         }

@@ -253,6 +253,20 @@ final class PromptBuilder
             );
         }
 
+        // ESCALATION. The objective rotation has cycled without freeing the
+        // agent, which means the rotation is part of the rut. Hand the model
+        // the world's own objective board (`GET /expansion`) and let it choose
+        // the course — the point being that a stall nobody has written code for
+        // can still resolve itself.
+        $brief = (string) ($lastDecision['brief'] ?? '');
+        if ($brief !== '') {
+            $lines[] = 'STUCK — CHOOSE A NEW COURSE. ' . $brief;
+            $board = (string) ($lastDecision['objectives'] ?? '');
+            if ($board !== '') {
+                $lines[] = $board;
+            }
+        }
+
         // Rolling history + a deterministic suggestion. A small local model
         // loops badly on the 7-rung ladder alone; showing it what it already
         // did and one concrete recommended move keeps it productive.

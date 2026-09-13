@@ -965,6 +965,9 @@ final class AutoPlayer
             if (($goal = $this->state->fuelGoal($agent_id)) > 0) {
                 $rawObs['_fuel_goal'] = $goal;
             }
+            if (($wants = $this->state->boardWants($agent_id)) !== []) {
+                $rawObs['_board_wants'] = $wants;
+            }
 
             // At a body (surface OR its orbit) — or latched as heading home from
             // one — pull that body's colony board so the decision can FUND the
@@ -977,6 +980,40 @@ final class AutoPlayer
             // that gap now work from anywhere — the co-op call for help, and
             // `invest {body,module,credits}`. Rotate by tick so several funded
             // bodies each get looked at rather than only the first.
+            // THE WORLD'S OWN OBJECTIVE BOARD (`GET /expansion`, the endpoint
+            // behind the site's Colonies tab). A whole-world payload, so it is
+            // polled on a cadence rather than every turn — but it IS polled,
+            // which is the point: until 3.9.0 the agent decided where to fly
+            // from a colony-done set it wrote itself and never revisited, and
+            // the live board had Mars at 1 of 5 modules with four lines wide
+            // open while that set said Mars was finished and skipped it.
+            $objectivesPromise = $this->state->objectivesDue($agent_id, $tick)
+                ? $this->nha->world->getExpansion()->then(
+                    static fn($e): array => (array) (json_decode(json_encode($e), true) ?: []),
+                    static fn(): array => [],
+                )
+                : resolve([]);
+
+            $objectivesPromise->then(function (array $e) use ($agent_id, $tick): void {
+                // Only reconcile against a payload that IS an objective board.
+                // `GET /expansion` is null off-era and can answer with an error
+                // document; treating either as "no bodies have work for us"
+                // would wipe the set and, worse, silently re-open every body.
+                if ((array) ($e['bodies'] ?? []) === []) {
+                    return;
+                }
+                // Derived, not remembered: recomputed from live `contrib`
+                // against the per-agent cap, so a body LEAVES the set when a
+                // module opens up as readily as it enters when we cap out.
+                $this->state->setColonyDone($agent_id, Objectives::bodiesWithNoWorkForUs($e, $agent_id));
+                $this->state->recordObjectives($agent_id, $tick, Objectives::digest($e, $agent_id));
+                // What a board still wants that the depot actually sells —
+                // the quartermaster stocks toward it so the credits and
+                // materials are there when a body opens up.
+                $fund = Objectives::fundableWithCredits($e, $agent_id);
+                $this->state->recordBoardWants($agent_id, $fund === null ? [] : $fund['remaining']);
+            });
+
             $doneBodies = $this->state->colonyDoneBodies($agent_id);
             $remoteBody = $homeBody === null && $doneBodies !== []
                 ? (string) $doneBodies[$tick % count($doneBodies)]
@@ -988,6 +1025,7 @@ final class AutoPlayer
                     static fn(): array => [],
                 )
                 : resolve([]);
+
 
             $researchPaying = $this->state->noteInventorPoints($agent_id, (int) ($observation->get('inventor_points') ?? 0));
 
@@ -1121,6 +1159,24 @@ final class AutoPlayer
             // it — so a failed brain call does not burn a rotation.
             $loopObjective = $loop !== null ? $this->state->peekNextForcedObjective($agent_id) : null;
 
+            // A loop break that keeps firing means the ROTATION is part of the
+            // rut, not the cure. Past a full cycle of it, stop steering by the
+            // fixed objective list and hand the model the world's own objective
+            // board with an explicit brief to pick a different course — so a
+            // novel stall resolves itself instead of waiting for a code change.
+            if ($loop !== null) {
+                $loopStreak = $this->state->countLoopBreak($agent_id);
+            } else {
+                $this->state->clearLoopBreaks($agent_id);
+                $loopStreak = 0;
+            }
+            $escalate = $loopStreak > count(StateStore::OBJECTIVE_ROTATION);
+            if ($escalate) {
+                // Let the model choose freely: a forced objective here would
+                // just be the rotation again under another name.
+                $loopObjective = null;
+            }
+
             $context = ($last ?? []);
             if (($pre['outcome'] ?? null) !== null) {
                 $context['outcome'] = $pre['outcome'];
@@ -1138,6 +1194,15 @@ final class AutoPlayer
             if ($loop !== null) {
                 $context['loop'] = $loop;
                 $context['forced_objective'] = $loopObjective;
+            }
+            if ($escalate) {
+                $context['stuck_streak'] = $loopStreak;
+                $context['objectives'] = $this->state->objectives($agent_id);
+                $context['brief'] = 'You have been stuck for ' . $loopStreak . ' loop breaks and the standard objective '
+                    . 'rotation has not freed you. Ignore what you were doing. Read the objective board below, pick the '
+                    . 'ONE thing you can actually contribute to from where you stand, and give the single verb that '
+                    . 'starts it. Lines marked * must be mined on that body; everything else can be funded with credits '
+                    . 'from anywhere via invest{body,module,credits}.';
             }
 
             $altNow = (int) ($observation->get('altitude') ?? 0);

@@ -486,4 +486,108 @@ trait LoopStrategyStateTrait
 
         return ($tick - (int) $last) < self::INVEST_COOLDOWN_TICKS;
     }
+
+    /** Ticks between two `GET /expansion` objective-board refreshes. @since 3.9.0 */
+    private const OBJECTIVE_REFRESH_TICKS = 300;
+
+    /**
+     * Whether the world objective board is due a refresh.
+     *
+     * It is a whole-world payload, so it is polled on a cadence rather than
+     * every turn — but it must be polled at all. The brain used to decide
+     * where to fly from a set it wrote itself and never revisited, and the
+     * live board showed Mars at 1 of 5 modules with four lines open while that
+     * set said Mars was finished.
+     *
+     * @since 3.9.0
+     */
+    public function objectivesDue(int $agent_id, int $tick): bool
+    {
+        $last = $this->data['agent_objectives_at'][(string) $agent_id] ?? null;
+
+        return ! is_numeric($last) || ($tick - (int) $last) >= self::OBJECTIVE_REFRESH_TICKS;
+    }
+
+    /** Stores the digest of the last objective board, and when it was read. @since 3.9.0 */
+    public function recordObjectives(int $agent_id, int $tick, string $digest): void
+    {
+        $key = (string) $agent_id;
+        $this->data['agent_objectives_at'][$key] = $tick;
+        $this->data['agent_objectives'][$key] = $digest;
+        $this->save();
+    }
+
+    /** The last objective-board digest, for the prompt. @since 3.9.0 */
+    public function objectives(int $agent_id): string
+    {
+        return (string) ($this->data['agent_objectives'][(string) $agent_id] ?? '');
+    }
+
+    /**
+     * Replaces the colony-done set with what the world actually says.
+     *
+     * Derived, not remembered: {@see \NHA\Brain\Objectives::bodiesWithNoWorkForUs()}
+     * recomputes it from live `contrib` against the per-agent cap every refresh,
+     * so a body can leave the set as well as enter it — a module opening up
+     * puts it back on the map without anyone noticing by hand.
+     *
+     * @param list<string> $bodies
+     *
+     * @since 3.9.0
+     */
+    public function setColonyDone(int $agent_id, array $bodies): void
+    {
+        $this->data['agent_colony_done'][(string) $agent_id] = array_values(array_unique(array_filter($bodies, 'is_string')));
+        $this->save();
+    }
+
+    /**
+     * Loop breaks that have fired without the situation resolving.
+     *
+     * The rotation ({@see OBJECTIVE_ROTATION}) handles an ordinary rut. What it
+     * cannot handle is a rut the rotation itself is part of — every objective
+     * tried, none of them applicable, round and round. Counting the breaks is
+     * what tells the difference, and past a full cycle the agent asks the model
+     * to pick a course from the world's objective board instead of waiting for
+     * someone to change the code.
+     *
+     * @since 3.9.0
+     */
+    public function countLoopBreak(int $agent_id): int
+    {
+        $key = (string) $agent_id;
+        $n = (int) ($this->data['agent_loop_breaks'][$key] ?? 0) + 1;
+        $this->data['agent_loop_breaks'][$key] = $n;
+        $this->save();
+
+        return $n;
+    }
+
+    /** How many loop breaks have fired without the agent getting clear. */
+    public function loopBreaks(int $agent_id): int
+    {
+        return (int) ($this->data['agent_loop_breaks'][(string) $agent_id] ?? 0);
+    }
+
+    /** A turn that was not a loop break means the agent is moving again. */
+    public function clearLoopBreaks(int $agent_id): void
+    {
+        if (isset($this->data['agent_loop_breaks'][(string) $agent_id])) {
+            unset($this->data['agent_loop_breaks'][(string) $agent_id]);
+            $this->save();
+        }
+    }
+
+    /** Depot-buyable lines an open colony board still wants. @since 3.9.0 */
+    public function recordBoardWants(int $agent_id, array $wants): void
+    {
+        $this->data['agent_board_wants'][(string) $agent_id] = array_map('intval', $wants);
+        $this->save();
+    }
+
+    /** @return array<string,int> */
+    public function boardWants(int $agent_id): array
+    {
+        return array_map('intval', (array) ($this->data['agent_board_wants'][(string) $agent_id] ?? []));
+    }
 }

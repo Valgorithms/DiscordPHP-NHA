@@ -45,6 +45,11 @@ class AutoPlayerTest extends NHAUnitTestCase
 
         $nha = getMockNha();
         (new \ReflectionProperty(NHA::class, 'nha_http'))->setValue($nha, $http);
+        // The repositories capture the HTTP client at construction, so patching
+        // it on the NHA object alone leaves them pointed at the real one — a
+        // repository call then fires a LIVE request and its promise never
+        // settles inside a synchronous test. Patch the repository too.
+        (new \ReflectionProperty(\NHA\Repository\AbstractRepository::class, 'nha_http'))->setValue($nha->world, $http);
 
         return $nha;
     }
@@ -2190,5 +2195,26 @@ class AutoPlayerTest extends NHAUnitTestCase
         $p3 = new AutoPlayer($this->nhaWith($broke), $this->brainReturning('{"verb":"build","args":{"part":"jet"}}'), new StateStore($this->statePath));
         $p3->step(142287, 'tok');
         self::assertNotSame('build', $this->posts[0][1]['verb'], 'a jet needs 10 metal + 2 crystal; there is 1 metal');
+    }
+
+    /**
+     * When the rotation itself becomes the rut, the model is handed the world's
+     * objective board and asked to choose — so a stall nobody wrote code for
+     * can still resolve without one.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAPersistentLoopEscalatesToTheModelWithTheObjectiveBoard(): void
+    {
+        $state = new StateStore($this->statePath);
+        for ($i = 0; $i <= count(StateStore::OBJECTIVE_ROTATION); ++$i) {
+            $state->countLoopBreak(142287);
+        }
+        self::assertGreaterThan(count(StateStore::OBJECTIVE_ROTATION), $state->loopBreaks(142287));
+
+        // A turn that is NOT a loop break clears the streak, so the escalation
+        // cannot latch on an agent that has started moving again.
+        $state->clearLoopBreaks(142287);
+        self::assertSame(0, $state->loopBreaks(142287));
     }
 }

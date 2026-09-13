@@ -146,7 +146,10 @@ class WorldRepository extends AbstractRepository
      */
     public function getExpansion(): PromiseInterface
     {
-        return $this->nha_http->get(Endpoint::EXPANSION);
+        // `Endpoint::bind()`, not the bare constant: `get()` takes an Endpoint
+        // object and a raw string fails inside the HTTP layer (strtolower on a
+        // null). This method had never been called, so it had never shown.
+        return $this->nha_http->get(Endpoint::bind(Endpoint::EXPANSION));
     }
 
     /**

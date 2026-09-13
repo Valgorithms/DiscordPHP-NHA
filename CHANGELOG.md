@@ -6,6 +6,51 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-09-13
+
+### Added
+- **The agent reads the world's objective board.** `GET /expansion` - the
+  endpoint behind the site's Colonies tab - carries every body, every module,
+  `need`/`have`/`remaining`, each funder's `contrib` and the Accord
+  conditions. New `Brain\Objectives` turns that into the only question that
+  drives strategy: *where can I still do something useful, and does it take
+  money or boots?*
+  - `fundableWithCredits()` finds a module short only of lines the depot
+    sells - fundable from anywhere with `invest{body,module,credits}`.
+  - `forwardBaseTarget()` finds one that needs surface-mined exotics
+    (regolith, Martian ice, perchlorate, nitrogen, acid skin, graphite) -
+    the trip worth making, because no amount of credits substitutes for it.
+  - Buyable/not is derived from `GameData::DEPOT_UNIT_COST`, so it cannot
+    drift from the price table the buys already use.
+- **`colonyDone` is now derived, not remembered.** It is recomputed from live
+  `contrib` against the per-agent cap on every refresh, so a body LEAVES the
+  set when a module opens up as readily as it enters when we cap out. The old
+  write-only flag had Mars marked finished and skipped as a destination while
+  the live board showed it at **1 of 5 modules with four lines wide open**.
+- **A stuck agent asks the model, with the board in hand.** The objective
+  rotation handles an ordinary rut; it cannot handle a rut it is itself part
+  of. Past a full cycle of loop breaks the rotation is dropped, the objective
+  board goes into the prompt, and the model is asked to pick the one thing it
+  can actually contribute to. A novel stall can now resolve without a code
+  change.
+- The quartermaster stocks toward what an open board wants, not just its own
+  build lines - so the credits and materials are banked for the moment a body
+  becomes reachable.
+
+### Fixed
+- **`WorldRepository::getExpansion()` never worked.** It passed the bare
+  `Endpoint::EXPANSION` string where `get()` needs a bound `Endpoint` object,
+  which fails inside the HTTP layer. The method had never been called, so it
+  had never shown.
+- The test mock patched the HTTP client on the `NHA` object but not on the
+  repositories, which capture it at construction - so any repository call in a
+  test fired a LIVE request whose promise never settled.
+
+### Lesson
+- The agent had been deciding where to go from a set it wrote itself and never
+  re-read. Any state the world also knows should be asked for, not
+  remembered.
+
 ## [3.8.0] - 2026-09-13
 
 A dead-end audit of the whole decision path. Four structural traps, one of
