@@ -6,6 +6,31 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-09-13
+
+### Fixed
+- **Nine hours of rebuilding the same flyer.** Two causes, both live-traced
+  through `GET /log?agent=`:
+  - **A premature `finalize` threw the parts away.** The model reads a pile
+    of loose parts, calls the bundle "nearly complete" and finalizes - which
+    SPENDS them on a flyer with no orbital engine (live: vehicle #148875,
+    `flies=True`, no jet). That hull cannot depart, so the agent stays
+    stranded and the rebuild starts over on an empty pile. A `finalize` is
+    now held until `Ladder::flyerReady()` says the bundle actually assesses
+    as depart-capable.
+  - **The income path was too slow to ever finish one.** A flyer part costs
+    8-10 metal (~100 credits) and the sell rung moved a flat **20 units** a
+    turn - 20 iron fetches 60 credits. So the agent alternated sell-a-lot /
+    buy-some-metal / build-one-part / broke-again indefinitely, against a
+    stockpile of 2,800 iron and half a million regolith. When the credits are
+    genuinely needed the lot is now 100; shedding a hoard stays at 20.
+
+### Lesson
+- "Stuck" is not always a loop. The verbs here were varied and every one of
+  them applied - the agent was making real progress and then destroying it
+  each time the model finalized early. Check whether progress is being LOST,
+  not just whether the same call repeats.
+
 ## [3.6.0] - 2026-09-13
 
 ### Changed

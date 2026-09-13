@@ -440,7 +440,14 @@ final class Ladder
                 $keep = $needCredits
                     ? ($raws[$sellRes] > self::MINE_RESEEK_FLOOR ? self::MINE_RESEEK_FLOOR : min(10, $keepFloor))
                     : max($keepFloor, self::MINE_RESEEK_FLOOR);
-                $n = min($raws[$sellRes] - $keep, 20);
+                // Lot size. A flat 20 is fine for shedding a hoard, but it is
+                // far too slow as an INCOME path: one flyer part costs ~8-10
+                // metal (~100 credits) and 20 iron fetches only 60, so the
+                // agent spent nine hours alternating sell-one-lot / buy-some-
+                // metal / build-one-part / broke again. When the credits are
+                // actually needed, sell a real lot.
+                $lot = $needCredits ? 100 : 20;
+                $n = min($raws[$sellRes] - $keep, $lot);
                 if ($n >= 1) {
                     return [
                         'verb' => 'sell',

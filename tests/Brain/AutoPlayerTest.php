@@ -2024,4 +2024,32 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertSame('sell', $post['verb'], 'cannot afford one unit — raise cash rather than re-fire the refusal');
         self::assertSame('iron', $post['args']['resource']);
     }
+
+    /**
+     * A `finalize` spends the loose parts, so one fired early mints a flyer
+     * with no orbital engine — which cannot depart, leaves the hull stranded,
+     * and starts the whole rebuild over on an empty parts pile.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAPrematureFinalizeIsHeldUntilTheBundleIsActuallyFlightReady(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordDepartRejection(142287, 'venus', 400, true);
+        $state->recordDepartRejection(142287, 'mars', 400, true);
+
+        // The live pile at 14:48: no tail, no fuel_tank, no landing_gear.
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'loose_parts' => ['frame', 'frame', 'cockpit', 'cockpit', 'jet', 'engine', 'engine', 'engine', 'propeller', 'propeller', 'wing'],
+            'inventory' => ['credits' => 900, 'metal' => 60, 'crystal' => 40,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'hull', 'flies' => true, 'orbital_engine' => false]],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"finalize","args":{"name":"flyer"}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'the bundle has no landing_gear, tail or fuel_tank yet');
+    }
 }

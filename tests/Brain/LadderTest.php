@@ -57,11 +57,15 @@ class LadderTest extends NHAUnitTestCase
         $poor = Ladder::suggestion($ground(100), [], [], false);
         $this->assertSame('sell', $poor['verb']);
         $this->assertSame('wood', $poor['args']['resource']);
-        $this->assertSame(20, $poor['args']['n']);
+        // A real lot when the credits are actually needed — a 20-unit dribble
+        // does not pay for a single flyer part.
+        $this->assertSame(100, $poor['args']['n']);
 
-        // A pile already under the baseline is still sellable in an emergency.
+        // A pile already under the baseline is still sellable in an emergency,
+        // and the lot is whatever is actually there.
         $thin = Ladder::suggestion(self::ground(['credits' => 100, 'wood' => 50]), [], [], false);
         $this->assertSame('sell', $thin['verb']);
+        $this->assertSame(40, $thin['args']['n']);
 
         // Healthy credits → it never reaches a sell (buys toward a tower instead).
         $rich = Ladder::suggestion($ground(1000), [], [], false);

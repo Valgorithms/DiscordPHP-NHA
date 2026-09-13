@@ -1547,6 +1547,22 @@ final class AutoPlayer
                     }
                 }
 
+                // A `finalize` SPENDS the loose parts. The model reads a pile
+                // of them and declares the bundle "nearly complete" — and a
+                // premature finalize is worse than useless: it mints a flyer
+                // with no orbital engine (live: vehicle #148875, flies=True,
+                // no jet), which cannot depart, so `$shipStranded` stays true
+                // and the whole rebuild starts over on an empty parts pile.
+                // Nine hours of this. Only let a finalize through once the
+                // bundle actually assesses as depart-capable.
+                if ($shipStranded && $verb === 'finalize' && ! Ladder::flyerReady(Ladder::looseParts($rawObs))) {
+                    $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departSelectSkip);
+                    if ($step !== null && ! in_array((string) ($step['verb'] ?? ''), ['depart', 'finalize'], true)) {
+                        $decision = ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => 'not flight-ready yet — ' . (string) ($step['why'] ?? 'finish the bundle first')];
+                        $verb = (string) $decision['verb'];
+                    }
+                }
+
                 // The rebuild advances by BUILDING parts. If the last several
                 // turns were `combine`/`buy` with no `build` and no `finalize`,
                 // an upgrade-item craft is spinning (world recipe drift) — stop
