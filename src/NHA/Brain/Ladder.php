@@ -67,6 +67,21 @@ final class Ladder
      */
     public const MINE_STOCK_TARGET = 1000;
 
+    /**
+     * Largest lot to put through the depot in one turn.
+     *
+     * The depot's price moves against volume, and hard: dumping 100 copper
+     * took it from 4/unit to 1 and returned 100 credits — exactly what 25
+     * units would have fetched at the intact price, while spending 75 more
+     * copper to get it. Iron went 3 → 1 the same way. The 100-unit lot added
+     * in 3.6.1 to speed up funding actually slowed it down, because the credits
+     * per turn are capped by the price crash, not by the lot size.
+     *
+     * Selling the same total across several turns (or several lines) earns
+     * multiples more, and the price recovers between visits.
+     */
+    public const DEPOT_SAFE_LOT = 25;
+
     /** Least worth sending to a colony board — below this the transaction is noise. */
     public const INVEST_MIN = 50;
 
@@ -449,13 +464,14 @@ final class Ladder
                 $keep = $needCredits
                     ? ($raws[$sellRes] > self::MINE_RESEEK_FLOOR ? self::MINE_RESEEK_FLOOR : min(10, $keepFloor))
                     : max($keepFloor, self::MINE_RESEEK_FLOOR);
-                // Lot size. A flat 20 is fine for shedding a hoard, but it is
-                // far too slow as an INCOME path: one flyer part costs ~8-10
-                // metal (~100 credits) and 20 iron fetches only 60, so the
-                // agent spent nine hours alternating sell-one-lot / buy-some-
-                // metal / build-one-part / broke again. When the credits are
-                // actually needed, sell a real lot.
-                $lot = $needCredits ? 100 : 20;
+                // Lot size. Bigger is NOT faster: the depot's price moves
+                // against volume, so a 100-unit dump returns the same credits
+                // as a 25-unit sale and spends 75 more units doing it (live:
+                // 100 copper for 100 credits, the price falling 4 → 1).
+                // {@see DEPOT_SAFE_LOT} is what the market absorbs without
+                // moving much; funding faster means selling on more turns, or
+                // across more lines, not in bigger lots.
+                $lot = $needCredits ? self::DEPOT_SAFE_LOT : 20;
                 $n = min($raws[$sellRes] - $keep, $lot);
                 if ($n >= 1) {
                     return [
@@ -839,7 +855,7 @@ final class Ladder
      *
      * @since 3.5.1
      */
-    public static function raiseCashStep(array $inv, int $n = 20, array $protect = []): ?array
+    public static function raiseCashStep(array $inv, int $n = self::DEPOT_SAFE_LOT, array $protect = []): ?array
     {
         $raws = [];
         foreach ($inv as $k => $qty) {
@@ -2070,7 +2086,7 @@ final class Ladder
                 // 3. Cannot afford it: turn a glut into credits. This is the
                 //    rung the old flow never reached, because the mission
                 //    stance kept trying to build with an empty purse.
-                if (($cash = self::raiseCashStep($inv, 100, self::protectedLines((array) ($raw['_board_wants'] ?? []), $res))) !== null) {
+                if (($cash = self::raiseCashStep($inv, self::DEPOT_SAFE_LOT, self::protectedLines((array) ($raw['_board_wants'] ?? []), $res))) !== null) {
                     return ['verb' => $cash['verb'], 'args' => $cash['args'], 'why' => 'quartermaster — ' . $cash['why']];
                 }
             }

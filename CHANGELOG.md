@@ -6,6 +6,28 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.2] - 2026-09-14
+
+### Fixed
+- **Selling in bigger lots was earning less, not more.** The depot's price
+  moves against volume: dumping 100 copper took it from 4/unit to 1 and
+  returned **100 credits** — exactly what 25 units would have fetched at the
+  intact price, having spent 75 more copper to get it. Iron went 3 → 1 the
+  same way, while metal, crystal and silicon (untouched that window) held at
+  5/8/6. The 100-unit emergency lot added in 3.6.1 to fund builds faster was
+  capping income at the crash price. `Ladder::DEPOT_SAFE_LOT` (25) is what the
+  market absorbs without moving much; funding faster means selling on more
+  turns or across more lines, not in bigger lots.
+
+### Notes
+- A second driver was found competing for the same agent: the PHPacker build
+  at `bin/build/autoplay/windows/windows-x64.exe`, compiled **Sep 11** and
+  running since Sep 13, driving agent 142285 concurrently with the source
+  runner. It predates every fix from 3.5.0 onward, and its acts are
+  interleaved with the source runner's in the world log — which is where the
+  post-fix `sell metal` entries came from. Stopped. Rebuild it from current
+  source before running it again.
+
 ## [3.9.1] - 2026-09-14
 
 ### Fixed

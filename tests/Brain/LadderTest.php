@@ -58,15 +58,17 @@ class LadderTest extends NHAUnitTestCase
         $poor = Ladder::suggestion($ground(100), [], [], false);
         $this->assertSame('sell', $poor['verb']);
         $this->assertSame('wood', $poor['args']['resource']);
-        // A real lot when the credits are actually needed — a 20-unit dribble
-        // does not pay for a single flyer part.
-        $this->assertSame(100, $poor['args']['n']);
+        // A real lot when the credits are actually needed — but capped at what
+        // the depot absorbs without the price moving against us. A 100-unit
+        // dump returns the same credits as 25 and burns 75 more units.
+        $this->assertSame(Ladder::DEPOT_SAFE_LOT, $poor['args']['n']);
 
         // A pile already under the baseline is still sellable in an emergency,
         // and the lot is whatever is actually there.
         $thin = Ladder::suggestion(self::ground(['credits' => 100, 'wood' => 50]), [], [], false);
         $this->assertSame('sell', $thin['verb']);
-        $this->assertSame(40, $thin['args']['n']);
+        // 50 held, keep a token 10 → 40 available, still capped by the safe lot.
+        $this->assertSame(min(40, Ladder::DEPOT_SAFE_LOT), $thin['args']['n']);
 
         // Healthy credits → it never reaches a sell (buys toward a tower instead).
         $rich = Ladder::suggestion($ground(1000), [], [], false);
@@ -1217,7 +1219,7 @@ class LadderTest extends NHAUnitTestCase
         self::assertNotNull($step);
         self::assertSame('sell', $step['verb']);
         self::assertSame('iron', $step['args']['resource']);   // brine is untradeable
-        self::assertSame(20, $step['args']['n']);
+        self::assertSame(Ladder::DEPOT_SAFE_LOT, $step['args']['n']);
 
         self::assertNull(Ladder::raiseCashStep(['credits' => 4, 'brine' => 9000]));
     }
