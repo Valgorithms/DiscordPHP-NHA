@@ -431,7 +431,10 @@ final class Ladder
         //    except in a genuine credit emergency (then keep a token 10). Only
         //    sell what the depot will actually buy — the biggest hoard is often
         //    `brine` (untradeable), which otherwise wedges this rung.
-        $sellRes = self::sellableBiggest($raws);
+        // Never raise cash by selling what we are trying to accumulate — the
+        // depot's 2× spread makes that a 50% loss per round trip.
+        $protectedLines = self::protectedLines((array) ($raw['_board_wants'] ?? []));
+        $sellRes = self::sellableBiggest(array_diff_key($raws, array_flip($protectedLines)));
         if ($sellRes !== null) {
             $needCredits = $credits < self::CREDIT_FLOOR;
             $keepFloor = self::floorFor($sellRes, $plan);
@@ -836,11 +839,14 @@ final class Ladder
      *
      * @since 3.5.1
      */
-    public static function raiseCashStep(array $inv, int $n = 20): ?array
+    public static function raiseCashStep(array $inv, int $n = 20, array $protect = []): ?array
     {
         $raws = [];
         foreach ($inv as $k => $qty) {
-            if ('credits' !== $k && is_numeric($qty) && $qty > 0 && in_array((string) $k, self::DEPOT_TRADEABLE, true)) {
+            if ('credits' !== $k && is_numeric($qty) && $qty > 0
+                && in_array((string) $k, self::DEPOT_TRADEABLE, true)
+                && ! in_array((string) $k, $protect, true)
+            ) {
                 $raws[(string) $k] = (int) $qty;
             }
         }
@@ -852,6 +858,43 @@ final class Ladder
         $sell = min($n, max(1, $raws[$res] - 10));
 
         return ['verb' => 'sell', 'args' => ['resource' => $res, 'n' => $sell], 'why' => "no credits to buy with — sell {$sell} {$res} to fund the next step"];
+    }
+
+    /**
+     * Lines it is never right to sell for cash: the ones the agent is actively
+     * trying to ACCUMULATE.
+     *
+     * The depot runs a 2× spread — metal pays 5 and costs 10, crystal pays 8
+     * and costs 16 — so a sell/buy round trip on one resource destroys half of
+     * it. "Sell the biggest tradeable hoard" was written when the biggest hoard
+     * was a useless glut; once the quartermaster works, the biggest hoard IS
+     * the restock line, and the agent starts funding a metal purchase by
+     * selling metal. Live, in one window:
+     *
+     *     sold 100 metal for 500  →  bought 50 metal for 300   (net -50 metal)
+     *     sold 100 metal for 100  →  bought 50 metal for 500
+     *
+     * — the second pair worse still because dumping 100 units at once craters
+     * the price to 1/unit. Converting a glut the agent has no use for into a
+     * line it needs is sound; converting a line into itself is a bonfire.
+     *
+     * @param array<string,int> $boardWants depot-buyable lines an open colony board still needs
+     *
+     * @return list<string>
+     *
+     * @since 3.9.1
+     */
+    public static function protectedLines(array $boardWants = [], ?string $buying = null): array
+    {
+        $protect = Stance::RESTOCK_LINES;
+        foreach (array_keys($boardWants) as $res) {
+            $protect[] = (string) $res;
+        }
+        if (null !== $buying) {
+            $protect[] = $buying;
+        }
+
+        return array_values(array_unique($protect));
     }
     /**
      * The agent is parked in Earth orbit with a `depart`-capable ship and no
@@ -2027,7 +2070,7 @@ final class Ladder
                 // 3. Cannot afford it: turn a glut into credits. This is the
                 //    rung the old flow never reached, because the mission
                 //    stance kept trying to build with an empty purse.
-                if (($cash = self::raiseCashStep($inv, 100)) !== null) {
+                if (($cash = self::raiseCashStep($inv, 100, self::protectedLines((array) ($raw['_board_wants'] ?? []), $res))) !== null) {
                     return ['verb' => $cash['verb'], 'args' => $cash['args'], 'why' => 'quartermaster — ' . $cash['why']];
                 }
             }

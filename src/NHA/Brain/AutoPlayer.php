@@ -2009,7 +2009,7 @@ final class AutoPlayer
                                 $decision['args']['n'] = $sized['n'];
                                 $decision['reason'] = (string) ($decision['reason'] ?? '') . " (sized {$want}→{$sized['n']} to {$purse} credits)";
                             }
-                        } elseif (($cash = Ladder::raiseCashStep($inv)) !== null) {
+                        } elseif (($cash = Ladder::raiseCashStep($inv, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res))) !== null) {
                             $decision = ['verb' => 'sell', 'args' => $cash['args'], 'reason' => "cannot afford 1 {$res} at {$purse} credits — " . $cash['why']];
                         } else {
                             // Broke AND nothing to sell. Emitting the buy anyway
@@ -2055,7 +2055,7 @@ final class AutoPlayer
                     if ($missing !== []) {
                         $res = (string) array_key_first($missing);
                         $acq = Ladder::affordableBuy($res, $missing[$res], (int) ($held['credits'] ?? 0))
-                            ?? Ladder::raiseCashStep($held);
+                            ?? Ladder::raiseCashStep($held, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res));
                         $decision = $acq !== null
                             ? ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "cannot build {$part} — short " . $missing[$res] . " {$res}; get it first"]
                             : self::idle($rawObs, "cannot build {$part} — short " . $missing[$res] . " {$res} and nothing to trade");

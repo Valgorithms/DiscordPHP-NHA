@@ -188,7 +188,9 @@ class AutoPlayerTest extends NHAUnitTestCase
         // not a re-submit and not `wait`.
         $nha = $this->nhaWith([
             'tick' => 42, 'downed_until' => 0, 'position' => [1, 1],
-            'inventory' => ['composite' => 3, 'metal' => 12],
+            // `iron`, not `metal`: metal is a restock line and selling one of
+            // those for cash is a 50% loss at the depot's 2× spread.
+            'inventory' => ['composite' => 3, 'iron' => 40],
             'dynamic' => [['sig' => 'glass,wood']],
         ]);
         $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"glass":1,"wood":1}}}'), new StateStore($this->statePath));
@@ -210,16 +212,18 @@ class AutoPlayerTest extends NHAUnitTestCase
         $state->recordCombineSignature(142287, 'iron+wood');
 
         // No build materials, but a real glut — the ladder sells it for credits.
+        // The glut is `iron`: `metal` is a line the agent accumulates, and
+        // selling one of those to raise cash loses half of it to the spread.
         $nha = $this->nhaWith([
             'tick' => 7, 'downed_until' => 0, 'position' => [1, 1],
-            'inventory' => ['metal' => 40],
+            'inventory' => ['iron' => 40],
         ]);
         $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"wood":1,"iron":1}}}'), $state);
 
         $player->step(142287, 'tok');
 
         $this->assertSame('sell', $this->posts[0][1]['verb'], 'a set already tried this run is not resubmitted');
-        $this->assertSame('metal', $this->posts[0][1]['args']['resource']);
+        $this->assertSame('iron', $this->posts[0][1]['args']['resource']);
     }
 
     /**

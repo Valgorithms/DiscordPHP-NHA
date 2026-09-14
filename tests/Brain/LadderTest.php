@@ -1349,4 +1349,47 @@ class LadderTest extends NHAUnitTestCase
         // for: dv = 900L/(mass+5L) >= 130 needs L >= 130·mass/250.
         self::assertGreaterThanOrEqual((int) ceil(130 * $s['mass'] / 250), $s['fuel_cap'], 'venus-capable on thrust but not on tankage is still stranded');
     }
+
+    /**
+     * The depot runs a 2× spread (metal pays 5, costs 10; crystal pays 8, costs
+     * 16), so selling a line to fund buying that same line destroys half of it.
+     * Live, in one window:
+     *
+     *     sold 100 metal for 500  →  bought 50 metal for 300
+     *     sold 100 metal for 100  →  bought 50 metal for 500
+     *
+     * Converting a glut the agent has no use for into a line it needs is sound.
+     * Converting a line into itself is a bonfire.
+     *
+     * @covers \NHA\Brain\Ladder::raiseCashStep
+     * @covers \NHA\Brain\Ladder::protectedLines
+     */
+    public function testItNeverRaisesCashBySellingTheLineItIsStockpiling(): void
+    {
+        // metal is the biggest hoard AND a restock line; iron is the real glut.
+        $inv = ['credits' => 4, 'metal' => 232, 'crystal' => 192, 'iron' => 60];
+
+        $naive = Ladder::raiseCashStep($inv);
+        self::assertSame('metal', $naive['args']['resource'], 'unprotected, it reaches for the biggest hoard');
+
+        $safe = Ladder::raiseCashStep($inv, 20, Ladder::protectedLines());
+        self::assertNotNull($safe);
+        self::assertSame('iron', $safe['args']['resource'], 'the stockpile is off the table; the glut is not');
+
+        // Funding a metal purchase must never be answered with "sell metal".
+        $buyingMetal = Ladder::raiseCashStep($inv, 20, Ladder::protectedLines([], 'metal'));
+        self::assertNotSame('metal', $buyingMetal['args']['resource']);
+
+        // Lines an open colony board still wants are protected too — they are
+        // about to be spent on a module, not traded away.
+        $protect = Ladder::protectedLines(['superalloy' => 64, 'nickel' => 48]);
+        self::assertContains('superalloy', $protect);
+        self::assertContains('nickel', $protect);
+        self::assertContains('metal', $protect);
+        self::assertContains('crystal', $protect);
+
+        // With nothing BUT protected lines there is no sale to make — the
+        // caller falls through to earning rather than eating the stockpile.
+        self::assertNull(Ladder::raiseCashStep(['credits' => 4, 'metal' => 232], 20, Ladder::protectedLines()));
+    }
 }

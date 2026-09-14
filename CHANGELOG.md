@@ -6,6 +6,38 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.1] - 2026-09-14
+
+### Fixed
+- **The agent was wash-trading its own stockpile away.** The depot runs a 2×
+  spread — metal pays 5 and costs 10, crystal pays 8 and costs 16 — so a
+  sell/buy round trip on one line destroys half of it. `raiseCashStep()` sells
+  "the biggest depot-tradeable hoard", which was written when the biggest hoard
+  was a useless glut; once the quartermaster started working, the biggest hoard
+  WAS the restock line, and the agent began funding metal purchases by selling
+  metal. From one live window:
+
+      sold 100 metal for 500  →  bought 50 metal for 300   (net -50 metal)
+      sold 100 metal for 100  →  bought 50 metal for 500
+
+  The second pair is worse because dumping 100 units at once craters the price
+  to 1/unit. Over that window its two largest "income" lines were **crystal
+  (1,600 credits) and metal (1,200)** — 2,800 credits raised by liquidating the
+  very stockpile it was building, against ~5,600 to buy back.
+- New `Ladder::protectedLines()` puts the restock lines, any line an open
+  colony board still wants, and the line currently being bought off the sell
+  list entirely. Applied at every sell site: the quartermaster rung, the
+  generic wealth rung, and the central buy/build gates. Converting a glut the
+  agent has no use for into a line it needs is sound; converting a line into
+  itself is a bonfire.
+
+### Lesson
+- A heuristic can be correct when written and become harmful when the state it
+  assumed changes. "Sell the biggest hoard" was right while the biggest hoard
+  was junk, and turned into self-cannibalism the moment the agent got good at
+  stockpiling. Re-read the assumptions of a rule whenever the thing it measures
+  starts moving.
+
 ## [3.9.0] - 2026-09-13
 
 ### Added
