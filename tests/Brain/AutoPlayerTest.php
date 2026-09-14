@@ -2221,4 +2221,46 @@ class AutoPlayerTest extends NHAUnitTestCase
         $state->clearLoopBreaks(142287);
         self::assertSame(0, $state->loopBreaks(142287));
     }
+
+    /**
+     * The model picks freely, so guarding the ladder's own sell rungs is not
+     * enough — the gate has to hold too. Live, after the ladder was guarded,
+     * the model still produced `sold 20 crystal for 160` and then bought 13
+     * back for 169: a straight loss to the depot's 2× spread, on the very line
+     * the quartermaster was stockpiling.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheModelCannotSellTheLineTheAgentIsStockpiling(): void
+    {
+        $base = [
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'vehicles' => [], 'loose_parts' => [], 'nearby_deposits' => [],
+        ];
+
+        // A real surplus exists → the sell is redirected onto it.
+        $withGlut = $base;
+        $withGlut['inventory'] = ['credits' => 20, 'crystal' => 200, 'metal' => 200, 'iron' => 300,
+            'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p1 = new AutoPlayer($this->nhaWith($withGlut), $this->brainReturning('{"verb":"sell","args":{"resource":"crystal","n":20}}'), new StateStore($this->statePath));
+        $p1->step(142287, 'tok');
+        $post = $this->posts[0][1];
+        if ('sell' === $post['verb']) {
+            self::assertNotSame('crystal', $post['args']['resource'], 'crystal is being stockpiled');
+            self::assertSame('iron', $post['args']['resource'], 'the actual surplus goes instead');
+        }
+
+        // No surplus at all → it does not sell the stockpile anyway.
+        $this->posts = [];
+        $noGlut = $base;
+        $noGlut['inventory'] = ['credits' => 20, 'crystal' => 200, 'metal' => 200,
+            'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p2 = new AutoPlayer($this->nhaWith($noGlut), $this->brainReturning('{"verb":"sell","args":{"resource":"metal","n":20}}'), new StateStore($this->statePath));
+        $p2->step(142287, 'tok');
+        $post = $this->posts[0][1];
+        if ('sell' === $post['verb']) {
+            self::assertNotContains($post['args']['resource'], ['metal', 'crystal'], 'never liquidate what the mission is waiting on');
+        }
+    }
 }

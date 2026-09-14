@@ -2022,6 +2022,29 @@ final class AutoPlayer
                     }
                 }
 
+                // Every `sell` passes here, whoever chose it — the ladder's own
+                // rungs are guarded at source, but the MODEL picks freely and
+                // was still selling the stockpile out from under the
+                // quartermaster (live: `sold 20 crystal for 160` followed by
+                // `bought 13 crystal for 169`, a straight loss to the depot's
+                // 2× spread). Guarding the ladder and not the gate left the
+                // hole open.
+                if (($decision['verb'] ?? '') === 'sell') {
+                    $inv = (array) $observation->getInventory();
+                    $res = (string) (($decision['args'] ?? [])['resource'] ?? '');
+                    $protected = Ladder::protectedLines($this->state->boardWants($agent_id));
+                    if ($res !== '' && in_array($res, $protected, true)) {
+                        // Swap to a genuine surplus if there is one; otherwise
+                        // do not sell at all. Never fund the mission by
+                        // liquidating what the mission is waiting on.
+                        $swap = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, $protected);
+                        $decision = $swap !== null
+                            ? ['verb' => 'sell', 'args' => $swap['args'], 'reason' => "{$res} is being stockpiled, not traded — " . (string) $swap['why']]
+                            : self::idle($rawObs, "{$res} is being stockpiled and there is no surplus to sell — earn it instead");
+                        $verb = (string) $decision['verb'];
+                    }
+                }
+
                 // A `sell` beyond what is actually held is refused ("insufficient")
                 // with the observation unchanged — the same spin shape. Clamp it.
                 if (($decision['verb'] ?? '') === 'sell') {

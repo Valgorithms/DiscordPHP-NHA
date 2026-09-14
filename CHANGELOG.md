@@ -6,6 +6,23 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.3] - 2026-09-14
+
+### Fixed
+- **Guarding the ladder's sell rungs was not enough — the model picks freely.**
+  3.9.1 put the restock lines off-limits inside `Ladder`, but the LLM's own
+  `sell` went straight to the intent queue, and it was still liquidating the
+  stockpile: `sold 20 crystal for 160` followed by `bought 13 crystal for 169`,
+  a straight loss to the depot's 2× spread on the line the quartermaster was
+  building. Every `sell` now passes the same protection at the last gate,
+  whoever chose it: redirected onto a genuine surplus when one exists, and
+  dropped entirely when one does not.
+
+### Lesson
+- A rule enforced where the decisions are *made* leaks wherever else they can
+  be made. The deterministic ladder and the model are two sources; a guard on
+  one is half a guard. Put it on the path they share.
+
 ## [3.9.2] - 2026-09-14
 
 ### Fixed
