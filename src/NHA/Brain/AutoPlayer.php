@@ -2060,6 +2060,65 @@ final class AutoPlayer
                     }
                 }
 
+                // A NOVEL mixture is a Guild filing, and the Guild charges
+                // (`observe.guild.filing_fee`, 50) at the moment of filing
+                // whatever the outcome. With less than that in the purse the
+                // intent is simply refused — another refusable verb, and one
+                // the agent was firing while holding 3 credits. A production
+                // recipe (`PRODUCTION_COMBINES`) or one the world already knows
+                // is not a filing and costs nothing, so those still go through.
+                if (($decision['verb'] ?? '') === 'combine') {
+                    $sig = self::combineSignature((array) ($decision['args'] ?? []));
+                    $fee = (int) (((array) ($rawObs['guild'] ?? []))['filing_fee'] ?? 0);
+                    $novel = $sig !== '' && ! isset(self::PRODUCTION_COMBINES[$sig]) && ! isset($known[$sig]);
+                    $purse = (int) (((array) $observation->getInventory())['credits'] ?? 0);
+                    if ($novel && $fee > 0 && $purse < $fee) {
+                        $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departSelectSkip);
+                        $decision = $step !== null && (string) ($step['verb'] ?? '') !== 'combine'
+                            ? ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => "a novel filing costs {$fee} and the purse holds {$purse} — " . (string) ($step['why'] ?? 'earn it first')]
+                            : self::idle($rawObs, "a novel filing costs {$fee} and the purse holds {$purse} — earn it first");
+                        $verb = (string) $decision['verb'];
+                    }
+                }
+
+                // A `combine` whose ingredients are not in hand is refused
+                // ("you don't hold those ingredients") with the observation
+                // unchanged — the last verb in the refusable class, and the
+                // one the model reaches for most. Live it sat on
+                // `combine {aluminum:1, carbon:1}` five times in one window
+                // with 45 aluminum and ZERO carbon: a soft spin that only
+                // looks varied because other turns interleave with it.
+                //
+                // Go and get the missing input instead. The recipe is fine; the
+                // cupboard is not, which is a different problem with a
+                // different answer.
+                if (($decision['verb'] ?? '') === 'combine') {
+                    $held = (array) $observation->getInventory();
+                    $short = [];
+                    foreach ((array) (($decision['args'] ?? [])['ingredients'] ?? []) as $res => $qty) {
+                        $gap = (int) $qty - (int) ($held[(string) $res] ?? 0);
+                        if ($gap > 0) {
+                            $short[(string) $res] = $gap;
+                        }
+                    }
+                    if ($short !== []) {
+                        $res = (string) array_key_first($short);
+                        $acq = Ladder::affordableBuy($res, max($short[$res], 10), (int) ($held['credits'] ?? 0));
+                        if ($acq !== null) {
+                            $decision = ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "no {$res} for that combine — buy {$acq['n']} first"];
+                        } else {
+                            // Not for sale, or no credits: harvest it where we
+                            // stand, else fall back to the ladder rather than
+                            // firing a combine that cannot land.
+                            $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departSelectSkip);
+                            $decision = $step !== null && (string) ($step['verb'] ?? '') !== 'combine'
+                                ? ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => "short {$short[$res]} {$res} for that combine — " . (string) ($step['why'] ?? 'go and get it')]
+                                : self::idle($rawObs, "short {$short[$res]} {$res} for that combine and no way to get it this turn");
+                        }
+                        $verb = (string) $decision['verb'];
+                    }
+                }
+
                 // Likewise a `build` whose bill we cannot cover. `BUILD_COST` is
                 // transcribed from the engine, so this is checkable up front
                 // rather than discovered one refusal at a time — live, 17 of the

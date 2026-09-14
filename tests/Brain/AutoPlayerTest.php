@@ -2263,4 +2263,41 @@ class AutoPlayerTest extends NHAUnitTestCase
             self::assertNotContains($post['args']['resource'], ['metal', 'crystal'], 'never liquidate what the mission is waiting on');
         }
     }
+
+    /**
+     * The last two refusable verbs: a `combine` whose ingredients are not in
+     * hand, and a novel filing the purse cannot pay the Guild for. Live, the
+     * agent sat on `combine {aluminum:1, carbon:1}` five times in one window
+     * holding 45 aluminum and ZERO carbon, and fired novel filings on 3
+     * credits against a 50-credit fee.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testACombineIsNotFiredWithoutTheIngredientsOrTheGuildFee(): void
+    {
+        $base = [
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'vehicles' => [], 'loose_parts' => [], 'nearby_deposits' => [],
+            'guild' => ['filing_fee' => 50],
+        ];
+
+        // Ingredients missing (carbon 0) → acquire, never fire the combine.
+        $noCarbon = $base;
+        $noCarbon['inventory'] = ['credits' => 900, 'aluminum' => 45, 'carbon' => 0,
+            'metal' => 300, 'crystal' => 300, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p1 = new AutoPlayer($this->nhaWith($noCarbon), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminum":1,"carbon":1}}}'), new StateStore($this->statePath));
+        $p1->step(142287, 'tok');
+        self::assertNotSame('combine', $this->posts[0][1]['verb'], 'no carbon — the recipe is fine, the cupboard is not');
+
+        // A novel mixture with less than the filing fee in the purse → not
+        // fired either; the Guild takes the 50 at the moment of filing.
+        $this->posts = [];
+        $broke = $base;
+        $broke['inventory'] = ['credits' => 3, 'salt' => 60, 'wire' => 40,
+            'metal' => 300, 'crystal' => 300, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p2 = new AutoPlayer($this->nhaWith($broke), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"salt":1,"wire":1}}}'), new StateStore($this->statePath));
+        $p2->step(142287, 'tok');
+        self::assertNotSame('combine', $this->posts[0][1]['verb'], '3 credits cannot pay a 50-credit filing fee');
+    }
 }

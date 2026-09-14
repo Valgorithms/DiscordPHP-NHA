@@ -6,6 +6,27 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.4] - 2026-09-14
+
+### Fixed
+- **`combine` was the last refusable verb without a gate**, and it became the
+  dominant rejection once the others were closed — 3 of 5 in a clean window.
+  The model sat on `combine {aluminum:1, carbon:1}` five times holding **45
+  aluminum and zero carbon**; a soft spin that only looked varied because
+  other turns interleaved with it. Ingredients are now checked against the
+  inventory first and the missing input acquired instead. The recipe was
+  never the problem — the cupboard was, and that has a different answer.
+- **A novel mixture is a Guild filing, and the Guild charges at the moment of
+  filing whatever the outcome** (`observe.guild.filing_fee`, currently 50).
+  The agent was firing them on **3 credits**. A filing it cannot pay for is
+  now not sent; production recipes and mixtures the world already knows are
+  free and still go through untouched.
+
+### Notes
+- That closes the refusable class for `buy`, `sell`, `build` and `combine`.
+  `mine` remains the one exception: it is emitted without a range check and
+  recovers on the following turn.
+
 ## [3.9.3] - 2026-09-14
 
 ### Fixed
