@@ -2307,8 +2307,11 @@ final class Ladder
             // parks there. Fall through to the generic ladder (sell a glut) if
             // it cannot afford or craft fuel this turn.
             if ($onGround && $hasShip && ! $fuelReady) {
-                if (($top = self::affordableBuy('cryo_fuel', self::DEPART_FUEL_MIN - $fuelUnits, $credits)) !== null) {
-                    return ['verb' => $top['verb'], 'args' => $top['args'], 'why' => "expansionist — stock {$top['n']} cryo_fuel ({$fuelUnits}/" . self::DEPART_FUEL_MIN . ') before riding up'];
+                // The REAL bar, not the moon-sized minimum — the same
+                // `_fuel_goal` the hold rung spends against. Riding up with
+                // 126 of the 546 a Venus transfer needs just parks the ship.
+                if (($top = self::affordableBuy('cryo_fuel', $fuelGoal - $fuelUnits, $credits)) !== null) {
+                    return ['verb' => $top['verb'], 'args' => $top['args'], 'why' => "expansionist — stock {$top['n']} cryo_fuel ({$fuelUnits}/{$fuelGoal}) before riding up"];
                 }
                 if ($has('ice') > 0 && ($has('coal') > 0 || $has('oil') > 0)) {
                     return ['verb' => 'combine', 'args' => ['ingredients' => ['ice' => 1, ($has('coal') > 0 ? 'coal' : 'oil') => 1]], 'why' => 'expansionist — combine cryo_fuel before riding up'];

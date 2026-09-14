@@ -2344,4 +2344,32 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertNotSame('combine', $post['verb']);
         self::assertNotSame('deposit', $post['verb'], 'no carbon and no credits — go and get some, do not idle');
     }
+
+    /**
+     * A token of fuel is not a fuelled ship. With 126 units against the 546 a
+     * Venus transfer needs, "has any fuel" switched the anti-spire guard off
+     * and the agent spent its turns raising vanity pyramids while the window it
+     * could not take ticked down.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testATokenOfFuelDoesNotCountAsAFuelledShip(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordFuelGoal(142287, 546);
+
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'inventory' => ['credits' => 5000, 'cryo_fuel' => 126, 'composite' => 6, 'metal' => 300,
+                'crystal' => 300, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 640]],
+            'elevators' => [['x' => 10, 'y' => 10, 'height' => 680]],
+            'nearby_deposits' => [],
+        ]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"pyramid","size":8,"height":42}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertNotSame('construct', $this->posts[0][1]['verb'], '126 of 546 is not flight-ready — no spires');
+    }
 }

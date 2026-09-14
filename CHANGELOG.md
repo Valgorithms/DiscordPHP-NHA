@@ -6,6 +6,26 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.6] - 2026-09-14
+
+### Fixed
+- **A token of fuel counted as a fuelled ship.** The anti-vanity-spire guard
+  tested `cryo_fuel > 0`, so with **126 units against the 546** a Venus
+  transfer needs the agent read as flight-ready, the guard switched off, and it
+  spent its turns raising pyramids and spheres for builder points while the
+  window it could not take counted down. Readiness now measures against the
+  learned `_fuel_goal` — the same bar 3.5.5 solved from the engine's own Δv
+  rejection.
+- The on-ground fuel rung had the matching half of the bug: it stocked toward
+  `DEPART_FUEL_MIN` (90, moon-sized) rather than the goal, so at 126 units it
+  declared the tank full and moved on. It now targets the goal, like the
+  orbital hold rung already did.
+
+### Lesson
+- The same mistake twice in one file: a threshold that means "some" standing in
+  for one that means "enough". 3.5.5 fixed it for the hold; these were the two
+  places that still asked the cheap question.
+
 ## [3.9.5] - 2026-09-14
 
 ### Fixed

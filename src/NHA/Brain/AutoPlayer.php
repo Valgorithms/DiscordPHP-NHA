@@ -1359,7 +1359,14 @@ final class AutoPlayer
                     && (int) ($observation->get('altitude') ?? 0) === 0
                 ) {
                     $held = (array) $observation->getInventory();
-                    $fuelled = ($held['hydrogen'] ?? 0) > 0 || ($held['cryo_fuel'] ?? 0) > 0 || ($held['helium3'] ?? 0) > 0;
+                    // "Has any fuel at all" is not readiness. With 126 units
+                    // against the 546 a Venus transfer needs, this counted the
+                    // ship as ready, switched the anti-spire guard OFF, and the
+                    // agent spent its turns raising vanity pyramids while the
+                    // window it could not take ticked down. Measure against the
+                    // learned goal, the same bar the ladder stocks toward.
+                    $fuelUnits = (int) ($held['hydrogen'] ?? 0) + (int) ($held['cryo_fuel'] ?? 0) + (int) ($held['helium3'] ?? 0);
+                    $fuelled = $fuelUnits >= max(Ladder::DEPART_FUEL_MIN, $this->state->fuelGoal($agent_id));
                     // A loose `ion_thruster` resource is not a ship — only a
                     // `finalize`d orbital vehicle clears the flight verbs, and a
                     // hull rejected for every body doesn't count.
