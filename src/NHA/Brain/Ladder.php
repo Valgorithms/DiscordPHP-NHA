@@ -240,6 +240,22 @@ final class Ladder
         // the materials the unbuilt parts still consume are raised to cover the
         // pending crafts ({@see shipMaterialPlan()}) and relax as parts are built.
         $gearingShip = self::isGearingShip($raw, $stance);
+        // A ship in hold is not the end of the mission's claim on the agent's
+        // materials. `isGearingShip()` goes false the moment a hull exists,
+        // which re-opened the tower rungs below while the ship sat on 126 of
+        // the 546 units its transfer needs — so the agent spent composite,
+        // metal and credits on vanity spires for builder points instead of the
+        // fuel that would actually let it leave. Towers wait until the tank
+        // does not.
+        $towerFuelShort = $stance === Stance::Expansionist->value
+            && ! ($raw['in_space'] ?? false)
+            && (int) ($raw['altitude'] ?? 0) === 0
+            && self::hasOrbitalShip($raw)
+            && (
+                (int) (($raw['inventory'] ?? [])['cryo_fuel'] ?? 0)
+                + (int) (($raw['inventory'] ?? [])['hydrogen'] ?? 0)
+                + (int) (($raw['inventory'] ?? [])['helium3'] ?? 0)
+            ) < max(self::DEPART_FUEL_MIN, (int) ($raw['_fuel_goal'] ?? 0));
         $plan = $gearingShip ? self::shipMaterialPlan($raw, true) : [];
 
         // 0. DEFEND. A recent "attacked" alert, a known robber, or a hostile
@@ -335,7 +351,7 @@ final class Ladder
         // Accord, not a field of vanity spires. (A grounded expansionist that
         // cannot yet build a working ship keeps *experimenting* with parts;
         // grinding builder points is not a substitute for the goal.)
-        if ($onGround && ! $gearingShip && $has('composite') >= 2 && $has('metal') >= 8) {
+        if ($onGround && ! $gearingShip && ! $towerFuelShort && $has('composite') >= 2 && $has('metal') >= 8) {
             if (self::cellOccupied($raw)) {
                 return self::stepToClearGround($raw);
             }
@@ -415,7 +431,7 @@ final class Ladder
         //     aluminium + carbon and combine them into `composite`. Skipped for
         //     a shipless expansionist — its credits and raws go to the mission
         //     (research / the flight kit), not a field of spires.
-        if ($onGround && $credits >= self::CREDIT_FLOOR && ! $gearingShip) {
+        if ($onGround && $credits >= self::CREDIT_FLOOR && ! $gearingShip && ! $towerFuelShort) {
             if ($has('metal') < 8 && $credits >= 60) {
                 return ['verb' => 'buy', 'args' => ['resource' => 'metal', 'n' => 8], 'why' => 'banking metal for a tower — credits are only useful spent'];
             }

@@ -6,6 +6,25 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.7] - 2026-09-14
+
+### Fixed
+- **Vanity spires again, from the other side.** 3.9.6 stopped the agent
+  *reading* as flight-ready on a token of fuel, but the guard delegates to
+  `Ladder::suggestion()` — whose own tower rungs then returned the same
+  `construct`, so the swap was a no-op and the spires kept going up.
+  `isGearingShip()` goes false the moment a hull exists, which re-opens those
+  rungs; a ship in hold is not the end of the mission's claim on the agent's
+  materials. Both tower rungs now also stand down while the tank is short of
+  the transfer (`_fuel_goal`), so composite, metal and credits go to the fuel
+  that lets it leave rather than builder points.
+
+### Lesson
+- A guard that fixes a decision by asking the ladder for a replacement is only
+  as good as the ladder's own answer. Check what the fallback returns in the
+  failing case — twice now a correct guard has been defeated by the thing it
+  delegated to.
+
 ## [3.9.6] - 2026-09-14
 
 ### Fixed

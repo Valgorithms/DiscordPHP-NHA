@@ -1394,4 +1394,35 @@ class LadderTest extends NHAUnitTestCase
         // caller falls through to earning rather than eating the stockpile.
         self::assertNull(Ladder::raiseCashStep(['credits' => 4, 'metal' => 232], 20, Ladder::protectedLines()));
     }
+
+    /**
+     * A ship in hold does not end the mission's claim on the agent's
+     * materials. `isGearingShip()` goes false the moment a hull exists, which
+     * re-opened the tower rungs while the ship sat on 126 of the 546 units its
+     * transfer needs — composite, metal and credits spent on vanity spires for
+     * builder points instead of the fuel that lets it leave.
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testNoVanitySpiresWhileTheTankIsShortOfTheTransfer(): void
+    {
+        $grounded = [
+            'tick' => 3, 'in_space' => false, 'altitude' => 0, 'position' => [10, 10],
+            'vehicles' => [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 640]],
+            'inventory' => self::KIT + ['credits' => 5000, 'composite' => 6, 'metal' => 40, 'cryo_fuel' => 126],
+            'nearby_deposits' => [], 'expansion' => ['windows' => []],
+        ];
+
+        // 126 of 546 → the tank has a claim; no spires.
+        $short = $grounded;
+        $short['_fuel_goal'] = 546;
+        $pick = Ladder::suggestion($short, [], [], false, 'expansionist');
+        self::assertNotSame('construct', $pick['verb'] ?? null, 'fuel first — a spire is not the mission');
+
+        // Tank full against the goal → towers are fair game again.
+        $full = $grounded;
+        $full['_fuel_goal'] = 100;
+        $pickFull = Ladder::suggestion($full, [], [], false, 'expansionist');
+        self::assertNotNull($pickFull);
+    }
 }
