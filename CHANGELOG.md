@@ -6,6 +6,26 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.9.5] - 2026-09-14
+
+### Fixed
+- **A guard that says "earn it first" has to earn it.** 3.9.4's Guild-fee gate
+  blocked the novel `combine` and then fell back to the idle no-op, so nothing
+  changed and the same block re-fired every turn: *"a novel filing costs 50 and
+  the purse holds 43 — earn it first"* on repeat, while the agent sat on **593
+  iron** — one sale from clearing the gap. The gate had simply moved the spin
+  rather than ending it.
+- All four gates shared that fallback (`buy`, `sell`, `build`, `combine`) and
+  now route through one `earnStep()`: sell a genuine surplus (never the
+  stockpile), else whatever the ladder would do that is not the blocked verb,
+  and only then idle.
+
+### Lesson
+- Refusing a verb early is only half the fix. The observation is unchanged
+  either way, so a gate that blocks and then idles produces exactly the loop it
+  was added to prevent. The turn has to be spent on the thing that unblocks the
+  decision.
+
 ## [3.9.4] - 2026-09-14
 
 ### Fixed

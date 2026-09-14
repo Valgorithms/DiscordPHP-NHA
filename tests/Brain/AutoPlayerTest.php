@@ -2300,4 +2300,48 @@ class AutoPlayerTest extends NHAUnitTestCase
         $p2->step(142287, 'tok');
         self::assertNotSame('combine', $this->posts[0][1]['verb'], '3 credits cannot pay a 50-credit filing fee');
     }
+
+    /**
+     * A guard that says "earn it first" has to EARN it. Both combine gates fell
+     * back to the idle no-op, so the block re-fired every turn with nothing
+     * changed — live, *"a novel filing costs 50 and the purse holds 43 — earn
+     * it first"* on repeat while the agent sat on 593 iron, one sale from
+     * clearing the gap.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testABlockedCombineGoesAndEarnsInsteadOfIdling(): void
+    {
+        $base = [
+            'tick' => 500, 'downed_until' => 0, 'position' => [10, 10],
+            'in_space' => false, 'altitude' => 0,
+            'vehicles' => [], 'loose_parts' => [], 'nearby_deposits' => [],
+            'guild' => ['filing_fee' => 50],
+        ];
+
+        // Short of the filing fee, but sitting on a sellable surplus.
+        $short = $base;
+        $short['inventory'] = ['credits' => 43, 'iron' => 593, 'salt' => 48, 'wire' => 20,
+            'metal' => 250, 'crystal' => 810, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p1 = new AutoPlayer($this->nhaWith($short), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"salt":1,"wire":1}}}'), new StateStore($this->statePath));
+        $p1->step(142287, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertNotSame('combine', $post['verb'], 'cannot pay the fee');
+        self::assertNotSame('deposit', $post['verb'], 'and must not idle — idling earns nothing');
+        self::assertSame('sell', $post['verb']);
+        self::assertSame('iron', $post['args']['resource'], 'the surplus, not the stockpile');
+
+        // Same shape when the ingredients are missing rather than the fee.
+        $this->posts = [];
+        $noStock = $base;
+        $noStock['inventory'] = ['credits' => 0, 'iron' => 400, 'aluminum' => 45, 'carbon' => 0,
+            'metal' => 250, 'crystal' => 810, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5];
+        $p2 = new AutoPlayer($this->nhaWith($noStock), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminum":1,"carbon":1}}}'), new StateStore($this->statePath));
+        $p2->step(142287, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertNotSame('combine', $post['verb']);
+        self::assertNotSame('deposit', $post['verb'], 'no carbon and no credits — go and get some, do not idle');
+    }
 }

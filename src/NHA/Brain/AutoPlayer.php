@@ -239,6 +239,49 @@ final class AutoPlayer
      */
     public const REBUILD_GENERATION_CAP = 3;
 
+    /**
+     * A step that actually CHANGES something when a decision has been blocked
+     * for want of credits or materials.
+     *
+     * Both combine gates used to fall back to {@see idle()} — which is a no-op,
+     * so the block re-fired every turn with the same reason. Live: *"a novel
+     * filing costs 50 and the purse holds 43 — earn it first"* repeated
+     * indefinitely while the agent sat on **593 iron**, one sale away from
+     * clearing the gap. A guard that says "earn it first" has to earn it.
+     *
+     * Order: sell a genuine surplus (never the stockpile — {@see
+     * Ladder::protectedLines()}), else whatever the ladder would do that is not
+     * the blocked verb itself, else idle as a true last resort.
+     *
+     * Every gate that refuses a verb routes through here. A gate that blocks a
+     * decision and then idles has simply moved the spin: the observation is
+     * unchanged, so the same decision arrives next turn and is blocked again.
+     * The whole point of refusing early is to spend the turn on the thing that
+     * unblocks it.
+     *
+     * @param array<string,mixed> $rawObs
+     * @param array<string,int>   $inv
+     * @param array<string,bool>  $known
+     * @param list<string>        $tried
+     * @param list<string>        $skip
+     *
+     * @return array{verb: string, args: array<string,mixed>, reason: string}
+     *
+     * @since 3.9.5
+     */
+    private function earnStep(array $rawObs, array $inv, string $lead, array $tried, array $known, string $stance, array $skip, array $boardWants, string $blockedVerb): array
+    {
+        if (($cash = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, Ladder::protectedLines($boardWants))) !== null) {
+            return ['verb' => (string) $cash['verb'], 'args' => (array) $cash['args'], 'reason' => $lead . ' — ' . (string) $cash['why']];
+        }
+        $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $skip);
+        if ($step !== null && (string) ($step['verb'] ?? '') !== $blockedVerb) {
+            return ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => $lead . ' — ' . (string) ($step['why'] ?? 'do something else')];
+        }
+
+        return self::idle($rawObs, $lead . ' — and nothing to sell or work this turn');
+    }
+
     private static function idle(array $raw, string $reason): array
     {
         $n = Ladder::noop($raw, $reason);
@@ -2017,7 +2060,7 @@ final class AutoPlayer
                             // (have 8)", forever) — go and get some material
                             // instead, which is the only thing that changes the
                             // inputs to this decision.
-                            $decision = self::idle($rawObs, "cannot afford 1 {$res} at {$purse} credits and nothing to sell — work for it instead");
+                            $decision = $this->earnStep($rawObs, $inv, "cannot afford 1 {$res} at {$purse} credits", $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'buy');
                         }
                     }
                 }
@@ -2040,7 +2083,7 @@ final class AutoPlayer
                         $swap = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, $protected);
                         $decision = $swap !== null
                             ? ['verb' => 'sell', 'args' => $swap['args'], 'reason' => "{$res} is being stockpiled, not traded — " . (string) $swap['why']]
-                            : self::idle($rawObs, "{$res} is being stockpiled and there is no surplus to sell — earn it instead");
+                            : $this->earnStep($rawObs, $inv, "{$res} is being stockpiled and there is no surplus to sell", $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'sell');
                         $verb = (string) $decision['verb'];
                     }
                 }
@@ -2073,10 +2116,17 @@ final class AutoPlayer
                     $novel = $sig !== '' && ! isset(self::PRODUCTION_COMBINES[$sig]) && ! isset($known[$sig]);
                     $purse = (int) (((array) $observation->getInventory())['credits'] ?? 0);
                     if ($novel && $fee > 0 && $purse < $fee) {
-                        $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departSelectSkip);
-                        $decision = $step !== null && (string) ($step['verb'] ?? '') !== 'combine'
-                            ? ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => "a novel filing costs {$fee} and the purse holds {$purse} — " . (string) ($step['why'] ?? 'earn it first')]
-                            : self::idle($rawObs, "a novel filing costs {$fee} and the purse holds {$purse} — earn it first");
+                        $decision = $this->earnStep(
+                            $rawObs,
+                            (array) $observation->getInventory(),
+                            "a novel filing costs {$fee} and the purse holds {$purse}",
+                            $tried,
+                            $known,
+                            $stance,
+                            $departSelectSkip,
+                            $this->state->boardWants($agent_id),
+                            'combine',
+                        );
                         $verb = (string) $decision['verb'];
                     }
                 }
@@ -2107,13 +2157,20 @@ final class AutoPlayer
                         if ($acq !== null) {
                             $decision = ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "no {$res} for that combine — buy {$acq['n']} first"];
                         } else {
-                            // Not for sale, or no credits: harvest it where we
-                            // stand, else fall back to the ladder rather than
-                            // firing a combine that cannot land.
-                            $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departSelectSkip);
-                            $decision = $step !== null && (string) ($step['verb'] ?? '') !== 'combine'
-                                ? ['verb' => (string) $step['verb'], 'args' => (array) ($step['args'] ?? []), 'reason' => "short {$short[$res]} {$res} for that combine — " . (string) ($step['why'] ?? 'go and get it')]
-                                : self::idle($rawObs, "short {$short[$res]} {$res} for that combine and no way to get it this turn");
+                            // Not for sale, or no credits: earn or harvest,
+                            // never idle — an idle here re-fires the same block
+                            // next turn with nothing changed.
+                            $decision = $this->earnStep(
+                                $rawObs,
+                                $held,
+                                "short {$short[$res]} {$res} for that combine",
+                                $tried,
+                                $known,
+                                $stance,
+                                $departSelectSkip,
+                                $this->state->boardWants($agent_id),
+                                'combine',
+                            );
                         }
                         $verb = (string) $decision['verb'];
                     }
@@ -2140,7 +2197,7 @@ final class AutoPlayer
                             ?? Ladder::raiseCashStep($held, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res));
                         $decision = $acq !== null
                             ? ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "cannot build {$part} — short " . $missing[$res] . " {$res}; get it first"]
-                            : self::idle($rawObs, "cannot build {$part} — short " . $missing[$res] . " {$res} and nothing to trade");
+                            : $this->earnStep($rawObs, $held, "cannot build {$part} — short " . $missing[$res] . " {$res}", $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'build');
                     }
                 }
 
