@@ -6,6 +6,18 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.10.2] - 2026-09-15
+
+### Fixed
+- **A credit emergency now outranks routine stockpiling.** Rung 3a stands down
+  when the agent is under `CREDIT_FLOOR` and a sale would genuinely fire. It was
+  written to stop the agent *spending* credits while standing on a deposit, and
+  quietly blocked it from *raising* them too: #142285 stood on wood with 2
+  credits and 4,774 crystal and chopped one unit a turn toward a target of 1,000
+  — four hours grinding a 2-credit line while too broke to buy fuel, pay a filing
+  fee, or fund a module with money. A pending craft still wins; filling up for
+  its own sake does not, and a pile inside the hoard cap is still not a glut.
+
 ## [3.10.1] - 2026-09-15
 
 ### Fixed

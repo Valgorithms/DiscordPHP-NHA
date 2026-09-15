@@ -177,6 +177,33 @@ final class Ladder
         return ['verb' => 'move', 'args' => ['x' => max(0, min(219, $x + $dx)), 'y' => max(0, min(219, $y + $dy))], 'why' => 'this cell is built on — step to clear ground before constructing'];
     }
 
+    /**
+     * The line the cash rung would sell RIGHT NOW to climb off the floor, or
+     * `null` when there is nothing worth selling.
+     *
+     * Exists so the stockpile rung and the sell rung cannot disagree about
+     * whether a glut is reachable — the stockpile rung stands down only when a
+     * sale would genuinely fire, never on the mere existence of a big pile.
+     *
+     * @param array<string,int> $raws       holdings, sorted desc
+     * @param array<string,int> $plan       pending craft needs
+     * @param array<string,int> $boardWants depot-buyable lines an open board still needs
+     *
+     * @since 3.10.2
+     */
+    private static function cashGlut(array $raws, array $plan, array $boardWants): ?string
+    {
+        $res = self::sellableBiggest(array_diff_key($raws, array_flip(self::protectedLines($boardWants, null, $raws, $plan))));
+        if (null === $res) {
+            return null;
+        }
+        $keep = $raws[$res] > self::MINE_RESEEK_FLOOR
+            ? self::MINE_RESEEK_FLOOR
+            : min(10, self::floorFor($res, $plan));
+
+        return $raws[$res] - $keep >= 1 ? $res : null;
+    }
+
     /** The biggest hoard the depot will actually buy, or `null`. `$raws` is sorted desc. */
     private static function sellableBiggest(array $raws): ?string
     {
@@ -405,6 +432,16 @@ final class Ladder
 
         // 3a. STOCKPILE what is under your feet before spending credits: standing
         //     on a deposit of a raw held below target → harvest it up to target.
+        //
+        //     But a credit EMERGENCY outranks routine stockpiling. This rung
+        //     only ever guarded against *spending*, and quietly blocked
+        //     *raising* too: live, #142285 stood on a wood deposit with 2
+        //     credits and 4,774 crystal and chopped 1 wood a turn toward a
+        //     target of 1,000 — four hours of grinding a 2-credit line while
+        //     broke, unable to buy fuel, pay a filing fee or fund a module with
+        //     money. A pending craft still wins; filling up for its own sake
+        //     does not.
+        $cashGlut = $credits < self::CREDIT_FLOOR ? self::cashGlut($raws, $plan, (array) ($raw['_board_wants'] ?? [])) : null;
         foreach ((array) ($raw['nearby_deposits'] ?? []) as $d) {
             $d = (array) $d;
             $res = (string) ($d['resource'] ?? '');
@@ -416,6 +453,10 @@ final class Ladder
             // craft floor. Walking to a deposit costs turns, so the point of
             // being here is to leave full — see MINE_STOCK_TARGET.
             $floor = max(self::MINE_STOCK_TARGET, self::floorFor($res, $plan));
+            $craftNeedsIt = ($plan[$res] ?? 0) > self::RESOURCE_TARGET;
+            if (null !== $cashGlut && ! $craftNeedsIt && $res !== $cashGlut) {
+                continue;
+            }
             if ($held < $floor) {
                 $verb = $res === 'wood' ? 'chop' : (in_array($res, ['herb', 'lichen', 'fungus', 'algae'], true) ? 'gather' : 'mine');
                 $n = min((int) ($d['amount'] ?? 10), $floor - $held, 15);

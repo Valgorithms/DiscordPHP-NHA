@@ -1467,4 +1467,58 @@ class LadderTest extends NHAUnitTestCase
         self::assertSame('sell', $step['verb']);
         self::assertSame('crystal', $step['args']['resource'], 'not 20 wood at 2 credits a unit');
     }
+
+    /**
+     * A credit EMERGENCY outranks routine stockpiling.
+     *
+     * Rung 3a guarded against *spending* credits while standing on a deposit,
+     * and quietly blocked *raising* them too. Live, #142285 stood on a wood
+     * deposit with 2 credits and 4,774 crystal and chopped one wood a turn
+     * toward a target of 1,000 - four hours of grinding a 2-credit line while
+     * too broke to buy fuel, pay a filing fee, or fund a module with money.
+     *
+     * @param array<string,int> $extra
+     *
+     * @return array<string,mixed>
+     */
+    private function brokeOnAWoodDeposit(array $extra): array
+    {
+        return [
+            'tick' => 1500, 'position' => [31, 106], 'in_space' => false, 'altitude' => 0,
+            '_fuel_goal' => 570, 'loose_parts' => [],
+            'vehicles' => [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true]],
+            'nearby_deposits' => [['resource' => 'wood', 'dist' => 0, 'amount' => 15]],
+            // No ice/oil/coal: the fuel combine cannot fire, so the ladder falls
+            // through to the stockpile rung exactly as it did live.
+            'inventory' => $extra + ['metal' => 130, 'wood' => 60, 'cryo_fuel' => 100,
+                'iron' => 60, 'copper' => 60, 'silicon' => 60, 'carbon' => 60, 'aluminum' => 60,
+                'salt' => 60, 'water' => 60, 'wire' => 60, 'chip' => 20,
+                'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+        ];
+    }
+
+    /** @covers \NHA\Brain\Ladder::suggestion */
+    public function testBrokeAndStandingOnADepositItSellsTheGlutBeforeItHarvests(): void
+    {
+        $step = Ladder::suggestion($this->brokeOnAWoodDeposit(['credits' => 2, 'crystal' => 4774]), [], [], false, 'expansionist');
+
+        self::assertNotNull($step);
+        self::assertSame('sell', $step['verb'], 'chopping a 2-credit line at 1/turn is no way out of being broke');
+        self::assertSame('crystal', $step['args']['resource']);
+    }
+
+    /**
+     * And it stands down only when a sale would GENUINELY fire. With the same
+     * crystal pile inside the hoard cap there is nothing to reach for, so
+     * standing on a deposit still means filling up.
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testWithNoGlutToReachForTheStockpileRungStillWins(): void
+    {
+        $step = Ladder::suggestion($this->brokeOnAWoodDeposit(['credits' => 2, 'crystal' => 500]), [], [], false, 'expansionist');
+
+        self::assertNotNull($step);
+        self::assertSame('chop', $step['verb'], 'a protected pile is not a glut, and being broke does not make it one');
+    }
 }
