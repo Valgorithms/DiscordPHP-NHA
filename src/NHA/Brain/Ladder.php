@@ -464,7 +464,7 @@ final class Ladder
         //    `brine` (untradeable), which otherwise wedges this rung.
         // Never raise cash by selling what we are trying to accumulate — the
         // depot's 2× spread makes that a 50% loss per round trip.
-        $protectedLines = self::protectedLines((array) ($raw['_board_wants'] ?? []));
+        $protectedLines = self::protectedLines((array) ($raw['_board_wants'] ?? []), null, $raws, $plan);
         $sellRes = self::sellableBiggest(array_diff_key($raws, array_flip($protectedLines)));
         if ($sellRes !== null) {
             $needCredits = $credits < self::CREDIT_FLOOR;
@@ -910,15 +910,33 @@ final class Ladder
      * the price to 1/unit. Converting a glut the agent has no use for into a
      * line it needs is sound; converting a line into itself is a bonfire.
      *
+     * The protection has a CEILING, though, and leaving it off wedged the agent
+     * just as hard from the other side. A restock line is worth protecting
+     * because the agent is trying to accumulate it — which stops being true the
+     * moment the pile dwarfs what restocking would ever want. Live, #142285 came
+     * home with 4,758 crystal (nineteen times {@see Stance::RESTOCK_EXIT}) and
+     * 14 credits, and ground `chop` → `sell 20 wood` → `chop` for ~40 credits a
+     * cycle because the one pile worth anything was untouchable. Past
+     * {@see capFor()} a restock line is a glut, not a stockpile, and the `sell`
+     * rung below is allowed to see it.
+     *
      * @param array<string,int> $boardWants depot-buyable lines an open colony board still needs
+     * @param array<string,int> $inv        holdings, to spot a restock line that has become a glut
+     * @param array<string,int> $plan       pending craft needs ({@see capFor()})
      *
      * @return list<string>
      *
      * @since 3.9.1
      */
-    public static function protectedLines(array $boardWants = [], ?string $buying = null): array
+    public static function protectedLines(array $boardWants = [], ?string $buying = null, array $inv = [], array $plan = []): array
     {
-        $protect = Stance::RESTOCK_LINES;
+        $protect = [];
+        foreach (Stance::RESTOCK_LINES as $res) {
+            // No inventory to judge by → protect, as this always did.
+            if ($inv === [] || (int) ($inv[$res] ?? 0) < self::capFor($res, $plan)) {
+                $protect[] = $res;
+            }
+        }
         foreach (array_keys($boardWants) as $res) {
             $protect[] = (string) $res;
         }
@@ -2102,7 +2120,7 @@ final class Ladder
                 // 3. Cannot afford it: turn a glut into credits. This is the
                 //    rung the old flow never reached, because the mission
                 //    stance kept trying to build with an empty purse.
-                if (($cash = self::raiseCashStep($inv, self::DEPOT_SAFE_LOT, self::protectedLines((array) ($raw['_board_wants'] ?? []), $res))) !== null) {
+                if (($cash = self::raiseCashStep($inv, self::DEPOT_SAFE_LOT, self::protectedLines((array) ($raw['_board_wants'] ?? []), $res, $inv))) !== null) {
                     return ['verb' => $cash['verb'], 'args' => $cash['args'], 'why' => 'quartermaster — ' . $cash['why']];
                 }
             }

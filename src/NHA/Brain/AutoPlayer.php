@@ -283,7 +283,7 @@ final class AutoPlayer
      */
     private function earnStep(array $rawObs, array $inv, string $lead, array $tried, array $known, string $stance, array $skip, array $boardWants, string $blockedVerb): array
     {
-        if (($cash = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, Ladder::protectedLines($boardWants))) !== null) {
+        if (($cash = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, Ladder::protectedLines($boardWants, null, $inv))) !== null) {
             return ['verb' => (string) $cash['verb'], 'args' => (array) $cash['args'], 'reason' => $lead . ' — ' . (string) $cash['why']];
         }
         $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $skip);
@@ -2121,7 +2121,7 @@ final class AutoPlayer
                                 $decision['args']['n'] = $sized['n'];
                                 $decision['reason'] = (string) ($decision['reason'] ?? '') . " (sized {$want}→{$sized['n']} to {$purse} credits)";
                             }
-                        } elseif (($cash = Ladder::raiseCashStep($inv, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res))) !== null) {
+                        } elseif (($cash = Ladder::raiseCashStep($inv, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res, $inv))) !== null) {
                             $decision = ['verb' => 'sell', 'args' => $cash['args'], 'reason' => "cannot afford 1 {$res} at {$purse} credits — " . $cash['why']];
                         } else {
                             // Broke AND nothing to sell. Emitting the buy anyway
@@ -2144,7 +2144,7 @@ final class AutoPlayer
                 if (($decision['verb'] ?? '') === 'sell') {
                     $inv = (array) $observation->getInventory();
                     $res = (string) (($decision['args'] ?? [])['resource'] ?? '');
-                    $protected = Ladder::protectedLines($this->state->boardWants($agent_id));
+                    $protected = Ladder::protectedLines($this->state->boardWants($agent_id), null, (array) $observation->getInventory());
                     if ($res !== '' && in_array($res, $protected, true)) {
                         // Swap to a genuine surplus if there is one; otherwise
                         // do not sell at all. Never fund the mission by
@@ -2263,7 +2263,7 @@ final class AutoPlayer
                     if ($missing !== []) {
                         $res = (string) array_key_first($missing);
                         $acq = Ladder::affordableBuy($res, $missing[$res], (int) ($held['credits'] ?? 0))
-                            ?? Ladder::raiseCashStep($held, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res));
+                            ?? Ladder::raiseCashStep($held, 20, Ladder::protectedLines($this->state->boardWants($agent_id), $res, $held));
                         $decision = $acq !== null
                             ? ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "cannot build {$part} — short " . $missing[$res] . " {$res}; get it first"]
                             : $this->earnStep($rawObs, $held, "cannot build {$part} — short " . $missing[$res] . " {$res}", $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'build');

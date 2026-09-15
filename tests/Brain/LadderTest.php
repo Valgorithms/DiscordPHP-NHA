@@ -1425,4 +1425,46 @@ class LadderTest extends NHAUnitTestCase
         $pickFull = Ladder::suggestion($full, [], [], false, 'expansionist');
         self::assertNotNull($pickFull);
     }
+
+    /**
+     * Protecting a restock line has to have a CEILING.
+     *
+     * The protection exists because the agent is trying to ACCUMULATE metal and
+     * crystal, and funding a metal purchase by selling metal is a bonfire. That
+     * reasoning stops applying the moment the pile dwarfs anything restocking
+     * would want. Live, #142285 came home with 4,758 crystal - nineteen times
+     * `Stance::RESTOCK_EXIT` - and 14 credits, and ground `chop` -> `sell 20
+     * wood` -> `chop` for about 40 credits a cycle, because the one pile worth
+     * anything to the depot was untouchable.
+     *
+     * @covers \NHA\Brain\Ladder::protectedLines
+     */
+    public function testARestockLineStopsBeingProtectedOnceItIsAGlut(): void
+    {
+        self::assertContains('crystal', Ladder::protectedLines(), 'with nothing to judge by, protect as before');
+        self::assertContains('crystal', Ladder::protectedLines([], null, ['crystal' => 240]), 'a pile being rebuilt stays protected');
+        self::assertContains('crystal', Ladder::protectedLines([], null, ['crystal' => 900]), 'and so does a healthy one');
+        self::assertNotContains('crystal', Ladder::protectedLines([], null, ['crystal' => 4758]), '4,758 is a glut, not a stockpile');
+        self::assertContains('metal', Ladder::protectedLines([], null, ['crystal' => 4758, 'metal' => 130]), 'the other line is judged on its own');
+    }
+
+    /**
+     * And the sell rung must actually reach for that glut rather than grinding
+     * a 20-unit wood pile for pocket change.
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testBrokeWithAGlutOfARestockLineItSellsTheGlut(): void
+    {
+        $step = Ladder::suggestion([
+            'tick' => 1500, 'position' => [31, 106], 'in_space' => false, 'altitude' => 0,
+            'vehicles' => [], 'loose_parts' => [], 'nearby_deposits' => [],
+            'inventory' => ['credits' => 14, 'crystal' => 4758, 'metal' => 130,
+                'wood' => 20, 'iron' => 23, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+        ], [], [], false, 'expansionist');
+
+        self::assertNotNull($step);
+        self::assertSame('sell', $step['verb']);
+        self::assertSame('crystal', $step['args']['resource'], 'not 20 wood at 2 credits a unit');
+    }
 }

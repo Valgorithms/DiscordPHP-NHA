@@ -6,6 +6,18 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.10.1] - 2026-09-15
+
+### Fixed
+- **Protecting a restock line had no ceiling, and that wedged the agent from the
+  other side.** `Ladder::protectedLines()` shielded `metal` and `crystal`
+  unconditionally, which is right while the agent is accumulating them and a
+  bonfire once the pile dwarfs anything restocking would want. Home from Venus
+  with 4,758 crystal — nineteen times `Stance::RESTOCK_EXIT` — and 14 credits,
+  #142285 ground `chop` → `sell 20 wood` → `chop` for about 40 credits a cycle
+  while the one pile the depot would pay for sat untouchable. Past `capFor()` a
+  restock line is a glut, and the `sell` rung is now allowed to see it.
+
 ## [3.10.0] - 2026-09-15
 
 ### Fixed
