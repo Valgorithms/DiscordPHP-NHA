@@ -240,6 +240,18 @@ final class AutoPlayer
     public const REBUILD_GENERATION_CAP = 3;
 
     /**
+     * Turns of genuine deadlock in the depart band before `distress` is spent.
+     *
+     * Generous on purpose. A shut transfer window is a legitimate wait of a
+     * couple of hundred ticks and must never be mistaken for being stranded —
+     * only a tank that cannot make the burn counts, and `distress` costs HP and
+     * jettisons the body haul. This is the last resort, not the fallback.
+     *
+     * @since 3.10.0
+     */
+    public const HOME_HOLD_STRAND = 40;
+
+    /**
      * A step that actually CHANGES something when a decision has been blocked
      * for want of credits or materials.
      *
@@ -1535,9 +1547,24 @@ final class AutoPlayer
                         $windowOpen = ! empty($win['open']);
                         $opensIn = (int) ($win['opens_in'] ?? 9999);
                         $fuel = (int) ($cInv['cryo_fuel'] ?? 0) + (int) ($cInv['hydrogen'] ?? 0) + (int) ($cInv['helium3'] ?? 0);
-                        $fuelForHome = max(45, (int) ($ex['return_dv'] ?? 0)) + 15;
+                        // `return_dv` is a Δv, NOT a fuel quantity, and the two
+                        // are an order of magnitude apart: 900·L/(mass + 5·L)
+                        // puts the 130 Δv of a Venus return at ~440 units on a
+                        // ~845 hull, not the 145 this once stocked toward. The
+                        // honest number is the one solved from the engine's own
+                        // rejection ({@see Ladder::fuelTargetFromRejection()});
+                        // until one has been learned, the Δv is only good as a
+                        // floor to keep the agent stocking.
+                        $learnedGoal = $this->state->fuelGoal($agent_id);
+                        $fuelForHome = max($learnedGoal, Ladder::DEPART_FUEL_MIN, (int) ($ex['return_dv'] ?? 0));
                         $credits = (int) ($cInv['credits'] ?? 0);
-                        $shipReady = Ladder::hasDepartCapableShip($rawObs, $departUnreachable);
+                        // Flying HOME is not gated on anywhere being left to fly
+                        // OUT to. `hasDepartCapableShip()` is false once every
+                        // body is funded — and Earth is not in `DEPART_ORDER`,
+                        // so a fully-visited agent could never be judged able to
+                        // come home and held in the band forever. The only
+                        // question for the return leg is whether a ship exists.
+                        $shipReady = Ladder::hasOrbitalShip($rawObs);
                         $lift = Ladder::orbitElevator($rawObs);
                         $px = (int) ((array) ($rawObs['position'] ?? [0, 0]))[0];
                         $py = (int) ((array) ($rawObs['position'] ?? [0, 0]))[1];
@@ -1556,9 +1583,37 @@ final class AutoPlayer
                             // Up the elevator, in the band. Go on an open window,
                             // else HOLD — do NOT ride back down (that was the
                             // sawtooth).
-                            $shipReady && $fuel >= 1 && $windowOpen
-                                ? $set('depart', ['dest' => 'earth'], "window open — depart for home")
-                                : $hold("in the depart band; holding for the return window (opens in {$opensIn})");
+                            //
+                            // `$fuel >= 1` used to be the whole bar, which made
+                            // `depart` the last refusable verb still fired blind:
+                            // the moment the window opened the agent burned a
+                            // turn on a Δv the tank could not make, the
+                            // observation came back unchanged, and it fired
+                            // again. One probe IS worth it when no goal has been
+                            // learned — the rejection is what teaches the real
+                            // number — but only one.
+                            $probing = $learnedGoal < 1;
+                            if ($shipReady && $windowOpen && ($fuel >= $fuelForHome || $probing)) {
+                                $this->state->clearHomeHolds($agent_id);
+                                $set('depart', ['dest' => 'earth'], $probing
+                                    ? "window open — depart for home (probing the Δv on {$fuel} fuel)"
+                                    : "window open — depart for home on {$fuel}/{$fuelForHome} fuel");
+                            } elseif ($shipReady && $fuel < $fuelForHome
+                                && $this->state->countHomeHold($agent_id) > self::HOME_HOLD_STRAND) {
+                                // Stranded, and the band is the one place the
+                                // agent cannot dig its way out of: no deposits to
+                                // mine, no depot to trade with, and riding down
+                                // costs the band it took a window to reach. The
+                                // engine documents the way out and the brain had
+                                // no rung for it — it costs HP and jettisons the
+                                // body haul, which is why it waits for
+                                // HOME_HOLD_STRAND turns of genuine deadlock
+                                // first, but a recalled agent is playing again
+                                // and a held one never will be.
+                                $set('distress', [], "stranded in orbit on {$fuel}/{$fuelForHome} fuel with {$credits} credits — emergency recall home");
+                            } else {
+                                $hold("in the depart band on {$fuel}/{$fuelForHome} fuel; holding for the return window (opens in {$opensIn})");
+                            }
                         } elseif ($grounded && ! $shipReady) {
                             $go = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $departUnreachable);
                             in_array((string) ($go['verb'] ?? ''), ['build', 'combine', 'buy', 'finalize'], true)
@@ -1566,7 +1621,14 @@ final class AutoPlayer
                                 : $hold('need a flyer to leave; nothing to build this turn');
                         } elseif ($grounded && $fuel < $fuelForHome && $credits >= 60) {
                             $set('buy', ['resource' => 'cryo_fuel', 'n' => min(30, $fuelForHome - $fuel + 5)], "stock cryo_fuel ({$fuel}/{$fuelForHome}) for the return Δv");
-                        } elseif ($grounded && ($windowOpen || $opensIn <= 30) && $lift !== null) {
+                        } elseif ($grounded && $fuel < $fuelForHome) {
+                            // Short of fuel AND of the credits to buy it. On the
+                            // ground that is workable — sell the haul, mine, craft
+                            // — and holding here is how the agent used to strand
+                            // itself by riding up on a tank it could never fill.
+                            $decision = $this->earnStep($rawObs, $cInv, "short fuel for the trip home ({$fuel}/{$fuelForHome})", $tried, $known, $stance, $departUnreachable, $this->state->boardWants($agent_id), 'depart');
+                            $verb = (string) $decision['verb'];
+                        } elseif ($grounded && $fuel >= $fuelForHome && ($windowOpen || $opensIn <= 30) && $lift !== null) {
                             // Ride up ONLY when the window is close — riding
                             // early just decays back out of the band.
                             $atLift

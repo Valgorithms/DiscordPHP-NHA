@@ -2372,4 +2372,143 @@ class AutoPlayerTest extends NHAUnitTestCase
 
         self::assertNotSame('construct', $this->posts[0][1]['verb'], '126 of 546 is not flight-ready — no spires');
     }
+
+    /**
+     * A base fixture for the trip home from Venus orbit, matching the live
+     * shape of agent #142285: share funded, in the depart band, 130 dv to run.
+     *
+     * @param array<string,mixed> $inv
+     *
+     * @return array<string,mixed>
+     */
+    private function venusOrbitHome(array $inv, bool $windowOpen = true): array
+    {
+        return [
+            'tick' => 1423270, 'downed_until' => 0, 'position' => [31, 106],
+            'in_space' => true, 'altitude' => 600,
+            'inventory' => $inv + ['stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'vehicles' => [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true]],
+            'expansion' => [
+                'location' => 'on_venus', 'place' => ['where' => 'body_orbit', 'body' => 'venus'],
+                'at_body' => 'venus', 'return_dv' => 130,
+                'windows' => ['venus' => ['open' => $windowOpen, 'opens_in' => $windowOpen ? 0 : 168]],
+            ],
+            'body' => 'venus', 'cap_pct_per_agent' => 40, 'complete' => false,
+            'modules' => [[
+                'module' => 'sky_lab', 'complete' => false,
+                'need' => ['acid_skin' => 400], 'remaining' => ['acid_skin' => 52],
+                'contrib' => ['142285' => ['acid_skin' => 160]],
+            ]],
+            'extractors' => [],
+        ];
+    }
+
+    /**
+     * Flying HOME must not depend on anywhere being left to fly OUT to.
+     *
+     * The return gate used `hasDepartCapableShip()`, which is false once every
+     * body is funded - and Earth is not in `DEPART_ORDER`, so an agent that had
+     * visited all four could never be judged able to come home. It would hold
+     * in the depart band forever. Live, #142285 was one Mars funding away from
+     * exactly that.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testItCanStillFlyHomeWithEveryOutboundBodyAlreadyFunded(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->setColonyDone(142285, ['deimos', 'phobos', 'mars', 'venus']);
+        $state->recordFuelGoal(142285, 440);
+
+        $nha = $this->nhaWith($this->venusOrbitHome(['credits' => 3, 'cryo_fuel' => 500]));
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"colony","body":"venus","module":"sky_lab"}}'), $state))
+            ->step(142285, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertSame('depart', $post['verb'], 'nowhere left to fly OUT to is not a reason to be unable to fly home');
+        self::assertSame('earth', $post['args']['dest']);
+    }
+
+    /**
+     * `return_dv` is a dv, not a tankful. At 130 dv on a ~845 hull the real
+     * requirement is ~440 units, not the 145 the old `max(45, return_dv) + 15`
+     * stocked toward - so `depart` fired blind the moment the window opened,
+     * was refused for thrust, and re-fired on an unchanged observation. One
+     * probe is allowed while the goal is unknown; once learned, it waits.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnUnderfuelledReturnIsNotFiredOnceTheRealGoalIsKnown(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordFuelGoal(142285, 440);
+
+        $nha = $this->nhaWith($this->venusOrbitHome(['credits' => 3, 'cryo_fuel' => 82]));
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"colony","body":"venus","module":"sky_lab"}}'), $state))
+            ->step(142285, 'tok');
+
+        self::assertNotSame('depart', $this->posts[0][1]['verb'], '82 of 440 makes 59 dv against the 130 needed');
+    }
+
+    /**
+     * With no goal learned yet, the rejection IS the teacher - take the shot.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testWithNoLearnedGoalItProbesTheReturnOnce(): void
+    {
+        $nha = $this->nhaWith($this->venusOrbitHome(['credits' => 3, 'cryo_fuel' => 82]));
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"colony","body":"venus","module":"sky_lab"}}'), new StateStore($this->statePath)))
+            ->step(142285, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertSame('depart', $post['verb'], 'nothing else in orbit teaches the real fuel number');
+        self::assertSame('earth', $post['args']['dest']);
+    }
+
+    /**
+     * A shut window is a legitimate wait of a couple of hundred ticks and must
+     * never be read as being stranded - `distress` costs HP and dumps the haul.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAClosedWindowIsWaitedOutNotEscapedWithDistress(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordFuelGoal(142285, 440);
+
+        for ($i = 0; $i < AutoPlayer::HOME_HOLD_STRAND + 5; ++$i) {
+            $this->posts = [];
+            $nha = $this->nhaWith($this->venusOrbitHome(['credits' => 3, 'cryo_fuel' => 500], false));
+            (new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"colony","body":"venus","module":"sky_lab"}}'), $state))
+                ->step(142285, 'tok');
+            self::assertNotSame('distress', $this->posts[0][1]['verb'], 'the tank is full - it is the window, and windows open');
+        }
+    }
+
+    /**
+     * Genuinely stranded: in the band, tank short of the burn, purse empty. The
+     * band is the one place the agent cannot dig out of - nothing to mine, no
+     * depot, and riding down costs the band. The engine documents `distress` as
+     * the recall and the brain had no rung for it, so this held forever.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnAgentStrandedInOrbitEventuallyCallsForRecall(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordFuelGoal(142285, 440);
+
+        $verbs = [];
+        for ($i = 0; $i < AutoPlayer::HOME_HOLD_STRAND + 3; ++$i) {
+            $this->posts = [];
+            $nha = $this->nhaWith($this->venusOrbitHome(['credits' => 3, 'cryo_fuel' => 82]));
+            (new AutoPlayer($nha, $this->brainReturning('{"verb":"construct","args":{"shape":"colony","body":"venus","module":"sky_lab"}}'), $state))
+                ->step(142285, 'tok');
+            $verbs[] = (string) $this->posts[0][1]['verb'];
+        }
+
+        self::assertContains('distress', $verbs, 'a recalled agent is playing again; a held one never will be');
+        self::assertNotSame('distress', $verbs[0], 'and not on the first turn');
+    }
 }

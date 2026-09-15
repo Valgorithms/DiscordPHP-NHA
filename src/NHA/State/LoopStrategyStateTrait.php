@@ -420,6 +420,38 @@ trait LoopStrategyStateTrait
         $this->save();
     }
 
+    /**
+     * Turns spent holding in the depart band with the trip home unaffordable.
+     *
+     * The return leg has no ladder rung and no way to earn: in orbit the agent
+     * cannot mine, cannot reach the depot, and cannot ride down without leaving
+     * the band. Live, agent #142285 sat in Venus orbit on 82 units of the ~440
+     * its hull needs for a 130 Δv return, holding on a window that was never
+     * the binding constraint. Counting the holds is what tells a legitimate
+     * wait-for-the-window from being stranded, and the engine documents the
+     * escape: `distress` is an emergency recall to Earth orbit.
+     *
+     * @since 3.10.0
+     */
+    public function countHomeHold(int $agent_id): int
+    {
+        $key = (string) $agent_id;
+        $n = (int) ($this->data['agent_home_holds'][$key] ?? 0) + 1;
+        $this->data['agent_home_holds'][$key] = $n;
+        $this->save();
+
+        return $n;
+    }
+
+    /** A turn that moved the trip home along means the agent is not stranded. */
+    public function clearHomeHolds(int $agent_id): void
+    {
+        if (isset($this->data['agent_home_holds'][(string) $agent_id])) {
+            unset($this->data['agent_home_holds'][(string) $agent_id]);
+            $this->save();
+        }
+    }
+
     /** The stored Δv-derived fuel goal, or 0 when none has been learned yet. */
     public function fuelGoal(int $agent_id): int
     {

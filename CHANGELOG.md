@@ -6,6 +6,43 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-09-15
+
+### Fixed
+- **The trip home could not be flown once every body was funded.** The return
+  gate asked `Ladder::hasDepartCapableShip()`, which is false when no OUTBOUND
+  destination is left — and Earth is not in `DEPART_ORDER`, so an agent that had
+  visited all four bodies could never be judged able to come home. Agent #142285
+  sat in Venus orbit one Mars funding short of a permanent hold. Flying home now
+  asks only whether a ship exists.
+- **`return_dv` was spent as if it were a tankful.** It is a Δv. At the 130 Δv of
+  a Venus return, `900·L/(mass + 5·L)` puts the real requirement near 440 units
+  on a ~845 hull — not the 145 that `max(45, return_dv) + 15` stocked toward. The
+  bar is now the fuel goal solved from the engine's own rejection
+  (`Ladder::fuelTargetFromRejection()`), floored by the Δv.
+- **`depart` was the last refusable verb still fired blind.** In the depart band
+  the only test was `fuel >= 1`, so the moment a window opened the agent burned a
+  turn on a burn the tank could not make, got an unchanged observation back, and
+  fired again. It now waits for the real bar — with a single probe allowed while
+  no goal has been learned, because the rejection is what teaches the number.
+- **Riding up on a tank that could never be filled.** The elevator rung only
+  checked the window, so the agent left the ground — and the depot, and anything
+  it could mine — underfuelled. It now rides only with the trip home paid for,
+  and a grounded agent short of both fuel and credits works through `earnStep()`
+  instead of holding.
+
+### Added
+- **`distress` as the terminal escape.** The engine documents it as the recall
+  for a stranded agent and the brain had no rung for it. The depart band is the
+  one place with nothing to mine, no depot and no way down that does not cost the
+  band, so a genuinely stranded agent held there forever. After
+  `AutoPlayer::HOME_HOLD_STRAND` turns of real deadlock — a shut window never
+  counts, and a full tank never counts — it calls for recall. It costs HP and
+  jettisons the body haul, which is why it is last; a recalled agent is playing
+  again and a held one never will be.
+- `StateStore::countHomeHold()` / `clearHomeHolds()`, which tell a legitimate
+  wait-for-the-window from being stranded.
+
 ## [3.9.7] - 2026-09-14
 
 ### Fixed
