@@ -6,6 +6,38 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-09-21
+
+### Added
+- **`Brain\Bodies` — destinations read from the world, not from a constant.**
+  Everything the brain had transcribed by hand is already published per
+  observation: `expansion.windows[body]` carries `dv_need`, `transit_ticks`,
+  `open` and `opens_in`, and `expansion.preflight.destinations[body]` carries
+  `needs_in_hold`, `needs_landing_gear_on_ship`, `min_thrust_to_weight`,
+  `course_correction_fuel`, `ready` and `blockers`. `Bodies` merges the two and
+  serves them cheapest-Δv first.
+- **Course-correction fuel is now modelled.** The crossing bills fuel beyond the
+  departure burn — 4 units to Deimos, 13 to Triton over its 260 ticks — and no
+  constant carried it, so nothing counted it. Being short does not get the
+  `depart` refused; it strands the agent on arrival.
+
+### Fixed
+- **Season 8's three new bodies were invisible.** The world now offers
+  `enceladus`, `titan` and `triton` alongside the original four, while
+  `Ladder::DEPART_ORDER`, `GameData::DV_NEED`, `TWR_DEPART` and `GEAR_BODIES`
+  all still named four. The agent could not see three of the seven places it was
+  allowed to fly — including Triton, the only body with open colony work (0/3).
+  `departTarget()`, `liveDestinations()` and `GameData::assess()` now enumerate
+  from the observation.
+
+### Deprecated
+- `Ladder::DEPART_ORDER`, `GameData::DV_NEED`, `GameData::TWR_DEPART` and
+  `GameData::GEAR_BODIES` are the offline fallback now, not the truth. They still
+  answer when an observation carries no `expansion` block, and a live observation
+  always wins. A missing preflight row falls back to what a body was last known
+  to demand, so a gap can only ever ask for more gear than the engine would,
+  never less.
+
 ## [3.10.2] - 2026-09-15
 
 ### Fixed

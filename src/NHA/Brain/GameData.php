@@ -52,11 +52,13 @@ final class GameData
     public const GRAVITY = 4;
 
     /** Terminal-maneuver thrust-to-weight each destination's `depart` demands (`engine.py` `TWR_DEPART`). */
+    /** @deprecated 3.11.0 Read the live table with {@see Bodies::twr()}; this is the offline fallback. */
     public const TWR_DEPART = [
         'deimos' => 0.5, 'phobos' => 0.5, 'mars' => 0.7, 'venus' => 0.9, 'earth' => 0.5,
     ];
 
     /** Δv (km/s ×10) each destination's transfer needs — ship `fuel_cap` + fuel must clear it (`engine.py` `DV_NEED`). */
+    /** @deprecated 3.11.0 Read the live table with {@see Bodies::all()}; this is the offline fallback. */
     public const DV_NEED = ['deimos' => 50, 'phobos' => 55, 'mars' => 100, 'venus' => 130];
 
     /** Items HELD (not on the ship) and consumed on arrival (`engine.py` `BODY_ITEMS`). */
@@ -71,6 +73,7 @@ final class GameData
      * is a cloud-deck aerostat, no touchdown). A gearless flyer clears the
      * TWR/Δv gates and is still rejected here, so {@see assess()} folds it in.
      */
+    /** @deprecated 3.11.0 Read the live list with {@see Bodies::gearBodies()}; this is the offline fallback. */
     public const GEAR_BODIES = ['deimos', 'phobos', 'mars'];
 
     /**
@@ -425,7 +428,7 @@ final class GameData
      *
      * @return array<string,mixed> the finalizeStats row + `orbital_engine:bool`, `can_launch:bool`, `depart:array<string,bool>`
      */
-    public static function assess(array $recipe): array
+    public static function assess(array $recipe, array $raw = []): array
     {
         $rows = [];
         $orbital = false;
@@ -443,13 +446,20 @@ final class GameData
         $mass = $stats['mass'];
         $thrust = $stats['thrust'];
 
+        // Judge the hull against the bodies the WORLD currently offers when an
+        // observation is to hand — Season 8's titan (TWR 0.8) and triton (0.4)
+        // are not in the constants below, and a hull is not "capable" or not in
+        // the abstract, only against somewhere real.
+        $twrTable = $raw === [] ? self::TWR_DEPART : Bodies::twr($raw);
+        $gearBodies = $raw === [] ? self::GEAR_BODIES : Bodies::gearBodies($raw);
+
         $depart = [];
-        foreach (self::TWR_DEPART as $dest => $twr) {
+        foreach ($twrTable as $dest => $twr) {
             $depart[$dest] = $stats['flies']
                 && $stats['controllable']
                 && $orbital
                 && $thrust >= $twr * self::GRAVITY * $mass
-                && (! in_array($dest, self::GEAR_BODIES, true) || ($stats['gear'] ?? 0) >= 1);
+                && (! in_array($dest, $gearBodies, true) || ($stats['gear'] ?? 0) >= 1);
         }
 
         return $stats + [

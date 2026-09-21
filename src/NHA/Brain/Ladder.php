@@ -723,7 +723,7 @@ final class Ladder
             return false;
         }
 
-        return self::liveDestinations($unreachable) !== [];
+        return self::liveDestinations($unreachable, $raw) !== [];
     }
 
     /**
@@ -755,9 +755,9 @@ final class Ladder
      *
      * @since 3.8.0
      */
-    public static function liveDestinations(array $unreachable = []): array
+    public static function liveDestinations(array $unreachable = [], array $raw = []): array
     {
-        return array_values(array_diff(array_keys(self::DEPART_ORDER), $unreachable));
+        return array_values(array_diff(Bodies::names($raw), $unreachable));
     }
 
     /**
@@ -1038,7 +1038,15 @@ final class Ladder
         return self::departTarget($raw, $unreachable) === null;
     }
 
-    /** Destinations ordered cheapest-Δv first, with the protective items each arrival consumes. */
+    /**
+     * Destinations ordered cheapest-Δv first, with the protective items each
+     * arrival consumes.
+     *
+     * @deprecated 3.11.0 The world publishes this per-observation; read it with
+     *             {@see Bodies::departOrder()}. Season 8 added three bodies and
+     *             this table did not, so the agent could not see the only one
+     *             with open colony work. Kept as the offline fallback only.
+     */
     public const DEPART_ORDER = [
         'deimos' => [], 'phobos' => [], 'mars' => ['heat_shield'], 'venus' => ['heat_shield', 'acid_skin'],
     ];
@@ -1083,7 +1091,7 @@ final class Ladder
             return null;
         }
         $windows = (array) ($raw['expansion']['windows'] ?? []);
-        foreach (self::DEPART_ORDER as $dest => $items) {
+        foreach (Bodies::departOrder($raw) as $dest => $items) {
             if (in_array($dest, $unreachable, true)) {
                 continue;
             }
@@ -1094,6 +1102,14 @@ final class Ladder
                 if ((int) ($inv[$item] ?? 0) < 1) {
                     continue 2;
                 }
+            }
+            // The crossing bills fuel for course corrections on top of the
+            // departure burn — 4 units to Deimos, 13 to Triton over its 260
+            // ticks. Nothing modelled it, because no constant carried it. Short
+            // of it the `depart` is still ACCEPTED; the agent simply arrives
+            // dry, which is a rescue rather than a refusal.
+            if ($fuel < Bodies::correctionFuel($raw, $dest)) {
+                continue;
             }
 
             return $dest;

@@ -1178,7 +1178,7 @@ final class AutoPlayer
             //  - THIS HULL CANNOT SERVE any body that IS worth flying to — a
             //    genuine dead-end hull, and a better one really does fix it.
             //    That is the rebuild, and it stays.
-            $noDestinations = Ladder::liveDestinations($this->state->colonyDoneBodies($agent_id)) === []
+            $noDestinations = Ladder::liveDestinations($this->state->colonyDoneBodies($agent_id), $rawObs) === []
                 || $this->state->rebuildGenerations($agent_id) >= self::REBUILD_GENERATION_CAP;
             $shipStranded = ! $inTransit
                 && ! $noDestinations
