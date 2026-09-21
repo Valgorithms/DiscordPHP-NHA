@@ -237,6 +237,41 @@ $installSignal = static function (int $signal) use ($loop, &$stopping, &$busy, $
 $installSignal(defined('SIGINT') ? SIGINT : 2);
 $installSignal(defined('SIGTERM') ? SIGTERM : 15);
 
+// Windows has no POSIX signals to deliver, so the handler above never runs
+// there and every Ctrl+C orphaned the lease for its full TTL — the next runner
+// then sat out ~45s logging "another driver holds the lease" at a process that
+// no longer existed. `sapi_windows_set_ctrl_handler()` is the platform's own
+// equivalent and fires for Ctrl+C and Ctrl+Break.
+//
+// It cannot cover everything: a `Stop-Process -Force` (or a crash) terminates
+// without notice, and no handler in any language sees that. The OS-held driver
+// lock in AutoplayLeaseTrait is what covers those — the kernel drops it when
+// the process dies, however it dies. This handler is the polite path; that lock
+// is the guarantee.
+if (function_exists('sapi_windows_set_ctrl_handler')) {
+    @sapi_windows_set_ctrl_handler(static function (int $event) use ($loop, &$stopping, &$busy, $logger, $state, $leaseHolder): void {
+        if ($stopping) {
+            $loop->stop();
+
+            return;
+        }
+        $stopping = true;
+        $state->releaseAutoplayLease($leaseHolder);
+        $logger->info($busy ? 'stop requested — finishing the current turn…' : 'stop requested');
+        if (! $busy) {
+            $loop->stop();
+        }
+    });
+}
+
+// Last line of defence for any exit that still runs PHP's shutdown sequence —
+// an uncaught throwable, a fatal, an `exit()` from anywhere. Cheap, idempotent
+// (the release is a no-op unless this process still holds the lease), and it
+// costs nothing on the normal path.
+register_shutdown_function(static function () use ($state, $leaseHolder): void {
+    $state->releaseAutoplayLease($leaseHolder);
+});
+
 $loop->futureTick($turn);                 // first turn now, not after one interval
 $loop->addPeriodicTimer($interval, $turn);
 

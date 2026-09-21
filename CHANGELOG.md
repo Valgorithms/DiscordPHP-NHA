@@ -6,6 +6,28 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.12.1] - 2026-09-21
+
+### Fixed
+- **A restarted runner sat out the full lease TTL on Windows.** `autoplay.php`
+  hands the lease back on SIGINT/SIGTERM — but Windows has no signals to
+  deliver, so that path never ran there and every stop orphaned the lease. The
+  next runner then skipped ~45s of turns logging *"another driver holds the
+  lease"* at a process that no longer existed. Three layers now cover it:
+  `sapi_windows_set_ctrl_handler()` for Ctrl+C and Ctrl+Break, a
+  `register_shutdown_function` for any exit that still runs PHP's shutdown
+  sequence, and — for the kills no handler can catch (`Stop-Process -Force`, a
+  crash) — an exclusive OS lock held for the driver's whole lifetime. The kernel
+  drops that lock when the process dies however it dies, so taking it is *proof*
+  the previous driver is gone. Liveness is never guessed from the holder's PID:
+  PIDs get recycled, and being wrong that way means two drivers submitting two
+  intents per interval from one token.
+- **The driver lock could not be created on a first run**, because the state
+  directory did not exist yet — so the first driver claimed nothing, `save()`
+  then created the directory, and the second driver found the lock free and read
+  a live first driver as dead. Exactly the two-driver outcome the lease exists
+  to prevent.
+
 ## [3.12.0] - 2026-09-21
 
 ### Added
