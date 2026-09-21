@@ -145,13 +145,39 @@ final class RefereeTest extends TestCase
         self::assertTrue(Referee::worthFiling(['ore', 'nickel'], $lore), 'and an untried ore pair is still worth a filing');
     }
 
-    /** The codex names a granted recipe's INPUTS, which the milestones never do. */
-    public function testTheCodexAlsoMarksAnIngredientProductive(): void
+    /**
+     * The world codex vouches for an ingredient we have no verdict history on
+     * — somebody made something with it, so it is usable.
+     */
+    public function testTheCodexVouchesForAnIngredientWeHaveNoHistoryOn(): void
     {
         $lore = Referee::lore($this->profile(), ['copper+tin' => true]);
 
         self::assertContains('copper', $lore['productive']);
         self::assertContains('tin', $lore['productive']);
+    }
+
+    /**
+     * …but it must never overrule OUR OWN record, and this is the subtle one.
+     *
+     * The live codex holds 138 recipes, so very nearly every raw material
+     * appears in it somewhere — including `herb`. Letting that count as
+     * productive marks everything productive and silently disables the
+     * exhaustion rule altogether, which is precisely the nine-filing herb sweep
+     * it exists to stop. "Is this pair already invented" is the codex's
+     * question, and the caller asks it separately against `$worldKnown`; "has
+     * the referee been telling US no" is not something the codex can answer.
+     */
+    public function testTheCodexCannotRescueAnIngredientOurOwnRefereeKeepsRefusing(): void
+    {
+        $lore = Referee::lore($this->profile(), [
+            'herb+moss' => true,        // somebody, somewhere, made this work
+            'carbon+resin' => true,
+        ]);
+
+        self::assertContains('herb', $lore['exhausted'], 'nine refusals against us outrank one stranger’s recipe');
+        self::assertFalse(Referee::worthFiling(['herb', 'titanium'], $lore));
+        self::assertNotContains('ore', $lore['exhausted'], 'and ore is still safe on its own grants');
     }
 
     /** A pair the Guild has already ruled on is never re-filed. */

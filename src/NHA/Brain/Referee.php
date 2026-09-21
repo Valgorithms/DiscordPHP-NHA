@@ -127,20 +127,32 @@ final class Referee
         // that completely, because they record the OUTPUT and never the
         // inputs. Writing off the most productive ingredient we have is a far
         // worse error than a few wasted filings, so this leans toward keeping.
+        // Productivity is measured from THIS agent's own grants, not from the
+        // world codex. The codex is the wrong witness here: with 138 recipes in
+        // it, almost every raw material appears somewhere, so feeding it in
+        // marks everything productive and quietly disables the rule — `herb`
+        // included, and the nine-filing herb sweep is the exact thing this is
+        // meant to stop. What the codex answers is "is this pair already
+        // invented", which is a separate check the caller already makes against
+        // `$worldKnown`; what it cannot answer is whether OUR referee has been
+        // telling US no about this ingredient for a reason.
+        //
+        // A granted recipe is named after what went into it, so the inputs can
+        // be read back out of the output name: nickel_ore_ingot → nickel, ore.
         $productive = [];
-        foreach (array_keys($worldKnown) as $sig) {
-            foreach (explode('+', (string) $sig) as $ing) {
-                if ($ing !== '') {
-                    $productive[$ing] = true;
-                }
-            }
-        }
         foreach (array_keys($invented) as $item) {
-            // Fallback when the codex is not to hand: a granted recipe is
-            // almost always named after what went into it.
             foreach (explode('_', (string) $item) as $part) {
                 if (strlen($part) > 2) {
                     $productive[$part] = true;
+                }
+            }
+        }
+        // A codex recipe is still evidence for an ingredient we have NO verdict
+        // history on — it just cannot overrule a record of refusals against us.
+        foreach (array_keys($worldKnown) as $sig) {
+            foreach (explode('+', (string) $sig) as $ing) {
+                if ($ing !== '' && ($rejectCount[$ing] ?? 0) < self::EXHAUSTED_AFTER) {
+                    $productive[$ing] = true;
                 }
             }
         }

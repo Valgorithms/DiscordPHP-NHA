@@ -6,6 +6,20 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.13.1] - 2026-09-21
+
+### Fixed
+- **The world codex silently disabled the exhaustion rule.** 3.13.0 counted an
+  ingredient as productive if it appeared anywhere in `/rules` — and the live
+  codex holds 138 recipes, so very nearly every raw material is in it somewhere,
+  `herb` included. Against live data `exhausted` came back EMPTY and the
+  nine-filing herb sweep would have resumed on fresh partners, which is the one
+  thing the rule exists to stop. Productivity is now measured from this agent's
+  own grants; the codex only vouches for an ingredient we have no verdict
+  history on, and can never overrule a record of refusals against us. *"Is this
+  pair already invented"* is the codex's question and the caller asks it
+  separately.
+
 ## [3.13.0] - 2026-09-21
 
 ### Added
