@@ -80,26 +80,34 @@ class LadderTest extends NHAUnitTestCase
      */
     public function testSuggestionHarvestsUpToTheStockpileTargetNotJustWhenShort(): void
     {
-        $onDeposit = fn(int $held): array => [
-            'tick' => 1, 'in_space' => false, 'altitude' => 0,
+        $onDeposit = fn(int $held, array $wants = []): array => [
+            'tick' => 1, 'in_space' => false, 'altitude' => 0, '_board_wants' => $wants,
             'inventory' => self::KIT + ['credits' => 1000, 'wood' => $held],
             'nearby_deposits' => [['resource' => 'wood', 'amount' => 50, 'x' => 1, 'y' => 1, 'dist' => 0]],
         ];
 
-        // Standing on a deposit it works it up to the HIGH-water mark, a turn
-        // at a time (harvest verbs move ~15 units), not to a thin craft floor.
+        // Standing on a deposit it works it up to the target, a turn at a time
+        // (harvest verbs move ~15 units), not to a thin craft floor.
         $s = Ladder::suggestion($onDeposit(20), [], [], false);
         $this->assertSame('chop', $s['verb']);
         $this->assertSame(15, $s['args']['n'], 'a full turn of harvesting, not a 10-unit top-up');
 
         // Well past the old 30 target and still going — this is the point of
         // the band: come back from a deposit full.
-        $mid = Ladder::suggestion($onDeposit(600), [], [], false);
+        $mid = Ladder::suggestion($onDeposit(Ladder::MINE_IDLE_TARGET - 100), [], [], false);
         $this->assertSame('chop', $mid['verb']);
 
-        // At the high-water mark → stop and do something else.
-        $full = Ladder::suggestion($onDeposit(Ladder::MINE_STOCK_TARGET), [], [], false);
+        // At the target → stop and do something else. For a line NOTHING wants
+        // that bar is {@see Ladder::MINE_IDLE_TARGET}, not a flat thousand: the
+        // agent spent four hours chopping wood toward 1,000 at one unit a turn
+        // while the only open colony board asked for something else entirely.
+        $full = Ladder::suggestion($onDeposit(Ladder::MINE_IDLE_TARGET), [], [], false);
         $this->assertNotSame('chop', $full['verb']);
+
+        // …but let a board actually ASK for wood and the deep band is back —
+        // the band was never wrong to fill up, only about what "full" meant.
+        $wanted = Ladder::suggestion($onDeposit(Ladder::MINE_IDLE_TARGET, ['wood' => 800]), [], [], false);
+        $this->assertSame('chop', $wanted['verb'], 'a line a colony is waiting on is worth a deep pile');
     }
 
     /**

@@ -6,6 +6,43 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-09-21
+
+### Added
+- **`Brain\Vault` — Season 8's seal, which cannot be opened alone.** Six symbols
+  in order from an alphabet of twelve, six obelisks across four gravity wells,
+  and standing at one reveals exactly one symbol to that agent. The brain now
+  reads its own fragments, walks to any obelisk on ground it is already on
+  (reading takes no verb — the stone lights up on arrival), trades symbols in
+  world chat against the roster the engine publishes in
+  `vault.ask_these_agents`, and speaks `unlock{code}` on Titan the moment all
+  six are in hand. It **never guesses**: a partial code is a chat message, never
+  an attempt, because a wrong one freezes the stone for 90 ticks and reveals
+  nothing about how close it was.
+- **`observe` now sends the agent token** (as an `X-Agent-Token` header, never
+  `?token=`, which would put a secret in access logs and proxies). `GET /observe`
+  is open to everyone, so it will not hand out an agent's own fragments to an
+  unproven caller — without the token `vault.your_fragments` reads `"hidden"` and
+  the brain cannot tell "I hold none" from "I was not asked to prove it".
+- **`Ladder::stockTargetFor()` — the mining band is demand-aware.**
+  `MINE_STOCK_TARGET` was a flat 1,000 for every resource in the game, which is
+  right for a line something wants and absurd for one nothing does: the agent
+  chopped wood toward 1,000 at a unit a turn while the only open colony board
+  asked for something else entirely. Targets now follow demand — a board ask or
+  a pending craft keeps the deep band, a **non-tradeable** line keeps it too
+  (mining is its only source, and the colony asks that matter most are exactly
+  these), and only a tradeable line nothing wants narrows, to
+  `MINE_IDLE_TARGET`. That last case is safe precisely because such a line can
+  simply be bought if a need turns up.
+
+### Fixed
+- **A body-surface `construct` could be emitted with an empty `body`.** The
+  surface test accepts several observation shapes and only one carries a body
+  name, so a match on the others stamped `body: ""` into the args — a guaranteed
+  refusal, which leaves the observation unchanged and spins. Live Earth reports
+  `place.where: earth_orbit` so it does not trigger today; the guard is closed
+  regardless.
+
 ## [3.11.0] - 2026-09-21
 
 ### Added

@@ -224,6 +224,49 @@ trait LoopStrategyStateTrait
         $this->save();
     }
 
+    /**
+     * The vault call is the mechanic, not chatter — but it is still chatter if
+     * it repeats. Long, because six symbols do not arrive in a hurry and the
+     * agents who hold them are on their own launch windows.
+     *
+     * @since 3.12.0
+     */
+    private const VAULT_CALL_COOLDOWN_TICKS = 400;
+
+    /** Records a vault seal call. */
+    public function recordVaultCall(int $agent_id, int $tick): void
+    {
+        $this->data['agent_vault_call'][(string) $agent_id] = $tick;
+        $this->save();
+    }
+
+    /**
+     * Whether a vault call is still on cooldown. The `$said` fingerprint is
+     * what was last offered and asked for: when that CHANGES — a new symbol
+     * read, or a gap closed by someone answering — the news is worth repeating
+     * immediately, because it is new news.
+     */
+    public function vaultCallCooldownActive(int $agent_id, int $tick, string $said = ''): bool
+    {
+        $key = (string) $agent_id;
+        $last = $this->data['agent_vault_call'][$key] ?? null;
+        if (! is_numeric($last) || $tick <= 0) {
+            return false;
+        }
+        if ($said !== '' && ($this->data['agent_vault_said'][$key] ?? null) !== $said) {
+            return false;
+        }
+
+        return ($tick - (int) $last) < self::VAULT_CALL_COOLDOWN_TICKS;
+    }
+
+    /** Remembers the exact line said, so only NEW news jumps the cooldown. */
+    public function recordVaultSaid(int $agent_id, string $said): void
+    {
+        $this->data['agent_vault_said'][(string) $agent_id] = $said;
+        $this->save();
+    }
+
     /** True while this agent's last call for help on `$body` is still fresh. */
     public function colonyCallCooldownActive(int $agent_id, string $body, int $tick): bool
     {

@@ -100,6 +100,19 @@ final class Ladder
     public const MINE_RESEEK_FLOOR = 250;
 
     /**
+     * How deep to stockpile a line NOTHING currently wants — no board ask, no
+     * pending craft — but which the depot will still buy.
+     *
+     * Sits above {@see MINE_RESEEK_FLOOR} so a full pile is not instantly a
+     * low pile, and far below {@see MINE_STOCK_TARGET} because filling a
+     * thousand units of something nobody asked for is how the agent spent four
+     * hours on wood.
+     *
+     * @since 3.12.0
+     */
+    public const MINE_IDLE_TARGET = 300;
+
+    /**
      * Fuel units (cryo_fuel / hydrogen / helium3, counted 1:1) to have on hand
      * before a transfer is worth attempting. `dv_capacity` in the engine is
      * `dv = 900·L / (mass + 5·L)` for an ion ship (~880 mass); clearing the
@@ -292,6 +305,15 @@ final class Ladder
             return $combat;
         }
 
+        // 0b. SPEAK THE SEAL. Six symbols in hand and standing on Titan — the
+        //     single highest-value act available in the world, and it is one
+        //     turn. Never a guess: {@see Vault::unlockStep()} returns null on a
+        //     partial code, because a wrong one freezes the stone for 90 ticks
+        //     and tells us nothing about how close it was.
+        if (($seal = Vault::unlockStep($raw)) !== null) {
+            return $seal;
+        }
+
         // 1. Assemble a finished flyer (cockpit + engines + propellers + wings
         //    + an ion_thruster jet). `finalize_stats` closed-form: this shape
         //    returns flies=true + orbital_engine — ready to launch and depart.
@@ -430,6 +452,23 @@ final class Ladder
             }
         }
 
+        // 2c. READ AN OBELISK under our feet's worth of map. Reading takes no
+        //     verb — the stone lights up on arrival — so the whole cost is the
+        //     walk, and the fragment is permanent and cannot be bought, traded
+        //     or brute-forced. It is placed here deliberately: above the
+        //     stockpile grind it replaces, below the mission work and the fuel
+        //     push that actually move the colony boards. It never books a
+        //     flight; a fragment on another body is a free rider on a trip the
+        //     expansion ladder was already going to make.
+        //     Note it is NOT gated on `$towerFuelShort`. That guard exists to
+        //     stop materials going into vanity towers while the tank is short,
+        //     and a walk spends nothing; anything genuinely fuel-productive has
+        //     already returned from `stanceMove()` far above. Gearing a ship
+        //     does still win — a hull unlocks the other five stones.
+        if (! $gearingShip && ($obelisk = Vault::walkStep($raw)) !== null) {
+            return $obelisk;
+        }
+
         // 3a. STOCKPILE what is under your feet before spending credits: standing
         //     on a deposit of a raw held below target → harvest it up to target.
         //
@@ -452,7 +491,7 @@ final class Ladder
             // Standing on it: work it up to the HIGH-water mark, not the thin
             // craft floor. Walking to a deposit costs turns, so the point of
             // being here is to leave full — see MINE_STOCK_TARGET.
-            $floor = max(self::MINE_STOCK_TARGET, self::floorFor($res, $plan));
+            $floor = self::stockTargetFor($res, $plan, (array) ($raw['_board_wants'] ?? []));
             $craftNeedsIt = ($plan[$res] ?? 0) > self::RESOURCE_TARGET;
             if (null !== $cashGlut && ! $craftNeedsIt && $res !== $cashGlut) {
                 continue;
@@ -560,7 +599,10 @@ final class Ladder
             // resource has fallen to the low-water mark. Re-seeking the moment
             // it dips under the craft floor is what made the agent oscillate
             // between topping up and doing something else.
-            $floor = max(self::MINE_RESEEK_FLOOR, self::floorFor($res, $plan));
+            $floor = min(
+                self::stockTargetFor($res, $plan, (array) ($raw['_board_wants'] ?? [])),
+                max(self::MINE_RESEEK_FLOOR, self::floorFor($res, $plan)),
+            );
             if ($held < $floor && $floor - $held > $wantGap) {
                 $wantRes = $res;
                 $wantFloor = $floor;
@@ -1239,6 +1281,59 @@ final class Ladder
         }
 
         return GameData::remainingShipBill(self::SHIP_BUNDLE_TARGET, self::SHIP_PART_UPGRADE, $counts, $have);
+    }
+
+    /**
+     * How deep to stockpile ONE line while standing on its deposit.
+     *
+     * {@see MINE_STOCK_TARGET} used to be flat 1,000 for every resource in the
+     * game, which is right for a line something wants and absurd for one
+     * nothing does. Live, the agent chopped wood toward 1,000 at one unit a
+     * turn — four hours of work on a 2-credit line — while the only open
+     * colony board in the world was asking for something else entirely. The
+     * band was never wrong to fill up; it was wrong about what "full" meant.
+     *
+     * Demand, in descending order of how concrete it is:
+     *
+     *  - a colony board is asking for it        → the full band, plus the ask
+     *  - a pending craft needs it               → the full band
+     *  - the depot will not buy or sell it      → the full band. Mining is the
+     *                                             ONLY source, so a stockpile
+     *                                             is the only way to ever have
+     *                                             one — and the colony asks
+     *                                             that matter most are exactly
+     *                                             these (`c_regolith`,
+     *                                             `acid_skin`, body ices),
+     *                                             which is why `_board_wants`
+     *                                             cannot speak for them: it
+     *                                             lists only depot-BUYABLE
+     *                                             lines
+     *  - nothing wants it, but it is tradeable  → {@see MINE_IDLE_TARGET}. This
+     *                                             is the only case that
+     *                                             narrows, and it is safe
+     *                                             precisely because the line
+     *                                             can simply be bought if a
+     *                                             need turns up later
+     *
+     * @param array<string,int> $plan       pending craft needs
+     * @param array<string,int> $boardWants what an open colony board still needs
+     *
+     * @since 3.12.0
+     */
+    public static function stockTargetFor(string $res, array $plan, array $boardWants = []): int
+    {
+        $floor = self::floorFor($res, $plan);
+        if (($want = (int) ($boardWants[$res] ?? 0)) > 0) {
+            return max(self::MINE_STOCK_TARGET, $want + self::HOARD_CAP, $floor);
+        }
+        if (($plan[$res] ?? 0) > self::RESOURCE_TARGET) {
+            return max(self::MINE_STOCK_TARGET, $floor);
+        }
+        if (! in_array($res, self::DEPOT_TRADEABLE, true)) {
+            return max(self::MINE_STOCK_TARGET, $floor);
+        }
+
+        return max(self::MINE_IDLE_TARGET, $floor);
     }
 
     /**
@@ -2249,7 +2344,14 @@ final class Ladder
 
             // On a body → the mission itself: fund the colony, then the
             // terraform stages; an extractor in between for standing income.
-            if ($onSurface) {
+            //
+            // `$atBody` must actually NAME one. Every construct below stamps it
+            // into the args, and an empty `body` is a guaranteed refusal that
+            // leaves the observation unchanged — the refusable-verb spin. Live
+            // Earth reports `place.where: earth_orbit` so this does not trigger
+            // today, but the surface test accepts several shapes and only one
+            // of them carries a body name.
+            if ($onSurface && (string) $atBody !== '' && (string) $atBody !== 'earth') {
                 $colony = (array) ($expansion['colony'] ?? []);
                 $terraform = (array) ($expansion['terraform'] ?? []);
                 if ($colony !== [] && empty($colony['complete']) && $credits >= 200) {

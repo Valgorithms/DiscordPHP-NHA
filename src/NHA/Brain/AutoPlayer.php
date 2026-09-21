@@ -339,7 +339,7 @@ final class AutoPlayer
      */
     private const ADVANCING_VERBS = [
         'construct', 'finalize', 'combine', 'build', 'deploy', 'invest', 'fulfill',
-        'plant', 'ally', 'accept_ally', 'attack', 'heal', 'distress',
+        'plant', 'ally', 'accept_ally', 'attack', 'heal', 'distress', 'unlock',
     ];
 
     /**
@@ -979,7 +979,7 @@ final class AutoPlayer
             static fn(): ?object => null,
         );
 
-        return all(['outcome' => $outcome, 'known' => $this->knownCombines(), 'profile' => $profile])->then(fn(array $pre) => $this->nha->observe($agent_id)->then(function (AgentObservation $observation) use ($agent_id, $token, $last, $pre) {
+        return all(['outcome' => $outcome, 'known' => $this->knownCombines(), 'profile' => $profile])->then(fn(array $pre) => $this->nha->observe($agent_id, $token)->then(function (AgentObservation $observation) use ($agent_id, $token, $last, $pre) {
             $tick = (int) ($observation->get('tick') ?? 0);
             $downedUntil = (int) ($observation->get('downed_until') ?? 0);
 
@@ -1466,6 +1466,20 @@ final class AutoPlayer
                 ) {
                     $this->state->recordColonyCall($agent_id, $remoteBody, $tick);
                     $decision = ['verb' => 'say', 'args' => $callout['args'], 'reason' => $callout['why']];
+                    $verb = 'say';
+                } elseif (($seal = Vault::chatLine($rawObs)) !== null
+                    && ! $this->state->vaultCallCooldownActive($agent_id, $tick, $seal)
+                ) {
+                    // The vault is the one thing in this world that CANNOT be
+                    // solved by playing well alone — six stones across four
+                    // gravity wells, and a code that is hopeless to guess. The
+                    // engine even names who already holds each position. So
+                    // saying what we read and asking for the rest is not
+                    // flavour, it is the intended solution, and the cheapest
+                    // move available: strictly less work than flying.
+                    $this->state->recordVaultCall($agent_id, $tick);
+                    $this->state->recordVaultSaid($agent_id, $seal);
+                    $decision = ['verb' => 'say', 'args' => ['text' => $seal], 'reason' => 'vault — trade seal symbols; it cannot be opened alone'];
                     $verb = 'say';
                 }
 

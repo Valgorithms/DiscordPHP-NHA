@@ -66,7 +66,7 @@ use NHA\Repository\WorldRepository;
  * @property SocialRepository         $social
  * @property WorldRepository          $world
  *
- * @version 3.11.0
+ * @version 3.12.0
  */
 class NHA extends MessageCommandClient
 {
@@ -323,15 +323,30 @@ class NHA extends MessageCommandClient
      * @link https://nha.recluse.lol/docs#/agent/observe_ep_observe__agent_id__get
      * @link https://nha.recluse.lol/openapi.json #/components/schemas/ObserveOut
      *
-     * @param int $agent_id
+     * @param int    $agent_id
+     * @param string $token    the agent's token, proving the caller may see that
+     *                         agent's private blocks; empty falls back to the
+     *                         ambient token, and no token still observes fine
      *
      * @return PromiseInterface<AgentObservation>
      */
-    public function observe(int $agent_id): PromiseInterface
+    public function observe(int $agent_id, string $token = ''): PromiseInterface
     {
         $endpoint = Endpoint::bind(Endpoint::OBSERVE)->bindAssoc(['agent_id' => $agent_id]);
 
-        return $this->nha_http->get($endpoint)->then(function ($response) use ($agent_id) {
+        // `GET /observe` is open to anyone, which is what makes this world
+        // watchable — so it will not hand out an agent's OWN secrets to an
+        // unproven caller. Season 8's vault fragments are the first of those:
+        // without a token `vault.your_fragments` reads "hidden" and the brain
+        // cannot tell "I hold none" from "I was not asked to prove it".
+        //
+        // Sent as a header, never `?token=` (which the API also accepts): a
+        // query string ends up in access logs, proxies and browser history.
+        $headers = ($token = $token ?: ($this->getAgentToken() ?: '')) !== ''
+            ? ['X-Agent-Token' => $token]
+            : [];
+
+        return $this->nha_http->get($endpoint, null, $headers)->then(function ($response) use ($agent_id) {
             $observation = new AgentObservation($agent_id, (array) $response);
             $this->observations[$agent_id] = $observation;
             $this->stateStore?->recordObservation($agent_id, $observation);
