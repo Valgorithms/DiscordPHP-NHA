@@ -360,7 +360,7 @@ final class Ladder
         // 2. One speculative combine on a material surplus — research toward the
         //    goal, not a grind: it only spends raws that sit a margin above the
         //    stockpile target, and never a set already tried or invented.
-        if ($allowSpeculation && ($research = self::speculativeCombine($raws, $tried, $worldKnown, $plan))) {
+        if ($allowSpeculation && ($research = self::speculativeCombine($raws, $tried, $worldKnown, $plan, (array) ($raw['_combine_lore'] ?? [])))) {
             return $research;
         }
 
@@ -1873,7 +1873,7 @@ final class Ladder
      *
      * @return array{verb: string, args: array<string,mixed>, why: string}|null
      */
-    public static function speculativeCombine(array $raws, array $tried, array $worldKnown, array $plan = []): ?array
+    public static function speculativeCombine(array $raws, array $tried, array $worldKnown, array $plan = [], array $lore = []): ?array
     {
         $surplus = array_keys(array_filter(
             $raws,
@@ -1885,13 +1885,24 @@ final class Ladder
                 $pair = [$surplus[$i], $surplus[$j]];
                 sort($pair);
                 $sig = implode('+', $pair);
-                if (! isset($tried[$sig]) && ! isset($worldKnown[$sig])) {
-                    return [
-                        'verb' => 'combine',
-                        'args' => ['ingredients' => [$pair[0] => 1, $pair[1] => 1]],
-                        'why' => "{$pair[0]}+{$pair[1]} is an untried, uninvented tag set — research toward the goal",
-                    ];
+                if (isset($tried[$sig]) || isset($worldKnown[$sig])) {
+                    continue;
                 }
+                // Untried is not the same as worth 50 credits. The referee has
+                // already explained, on the record, why whole families of pairs
+                // cannot work — a crafted item carries no tags, and an
+                // ingredient refused again and again with nothing ever granted
+                // is spent. Skipping those is the difference between research
+                // and a paid random walk.
+                if (! Referee::worthFiling($pair, $lore)) {
+                    continue;
+                }
+
+                return [
+                    'verb' => 'combine',
+                    'args' => ['ingredients' => [$pair[0] => 1, $pair[1] => 1]],
+                    'why' => "{$pair[0]}+{$pair[1]} is an untried, uninvented tag set — research toward the goal",
+                ];
             }
         }
 
@@ -2283,7 +2294,7 @@ final class Ladder
         // set; this stance simply makes sure it is reached instead of being
         // pre-empted by a flight rung.
         if ($stance === Stance::Researcher->value && $allowSpeculation) {
-            if (($spec = self::speculativeCombine($raws, $tried, $worldKnown, $plan)) !== null) {
+            if (($spec = self::speculativeCombine($raws, $tried, $worldKnown, $plan, (array) ($raw['_combine_lore'] ?? []))) !== null) {
                 return $spec;
             }
         }
@@ -2603,7 +2614,7 @@ final class Ladder
                 // 4. Drive chain + airframe done and it still won't fly → a
                 //    novel `combine` off the raw surplus (a real shot at the
                 //    missing piece, and inventor points), then harvest.
-                if ($allowSpeculation && ($research = self::speculativeCombine($raws, $tried, $worldKnown, $plan))) {
+                if ($allowSpeculation && ($research = self::speculativeCombine($raws, $tried, $worldKnown, $plan, (array) ($raw['_combine_lore'] ?? [])))) {
                     return $research;
                 }
 

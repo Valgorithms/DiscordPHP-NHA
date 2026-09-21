@@ -6,6 +6,39 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-09-21
+
+### Added
+- **`Brain\Referee` — the Guild's verdicts are now read back, not just paid
+  for.** Every filing costs 50 credits, four in five world-wide are refused, and
+  the referee explains WHY in prose that is kept on the agent's profile forever.
+  The brain was reading those, logging them, and forgetting them. Two patterns
+  account for nearly all of #142285's 24 recorded rejections:
+  - **A crafted item carries no tags, so it can never be an ingredient** —
+    *"'composite' has a 'shaped' tag, but 'healing_salve' does not have any
+    tags"*. After inventing `medicinal_potion` the agent tried it against
+    composite, carbon, c_regolith and brine and was refused four times; it then
+    invented `healing_salve` and tried **the same four partners** for the same
+    four refusals. Eight filings, 400 credits, one rule learned twice.
+  - **An ingredient that only ever fails is spent** — `herb` was filed against
+    nine different partners for nine refusals and no grant.
+
+  `Ladder::speculativeCombine()` and the model-side combine gate both consult it,
+  so a pair the Guild has already ruled on is never filed again.
+
+### Fixed
+- **`ore` would have been written off as spent, and it is the best ingredient we
+  have.** It was refused six times (wire, water, salt, metal, ice, glass) while
+  also being the ingredient in BOTH granted recipes — `nickel_ore_ingot` and
+  `silicon_ore_alloy`. An `invent` milestone records only the OUTPUT, never the
+  inputs, so matching on those alone misses it entirely. Productivity is now
+  taken from the `/rules` codex (which does name inputs), with the recipe name
+  as a fallback; an ingredient that has ever produced anything is never spent.
+- **The tagless item was read together with the grammar around it.** The referee
+  names it mid-sentence — *"…, while healing salve has no defined properties"* —
+  and a greedy capture yielded `while_healing_salve`, which matches nothing and
+  silently disabled the rule it was there to enforce.
+
 ## [3.12.1] - 2026-09-21
 
 ### Fixed

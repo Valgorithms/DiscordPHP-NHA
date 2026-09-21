@@ -1023,6 +1023,20 @@ final class AutoPlayer
             if (($wants = $this->state->boardWants($agent_id)) !== []) {
                 $rawObs['_board_wants'] = $wants;
             }
+            // What the Guild referee has already told this agent, in its own
+            // recorded words. Every filing costs 50 credits and four in five
+            // world-wide are refused, so the verdicts are the most expensive
+            // data the agent owns — and they were being read once, logged, and
+            // forgotten. {@see Referee} turns them back into a filter.
+            if (is_array($pre['profile'] ?? null) || is_object($pre['profile'] ?? null)) {
+                $lore = Referee::lore(
+                    (array) json_decode((string) json_encode($pre['profile']), true),
+                    (array) ($pre['known'] ?? []),
+                );
+                if ($lore['tagless'] !== [] || $lore['rejected'] !== [] || $lore['exhausted'] !== []) {
+                    $rawObs['_combine_lore'] = $lore;
+                }
+            }
 
             // At a body (surface OR its orbit) — or latched as heading home from
             // one — pull that body's colony board so the decision can FUND the
@@ -2198,7 +2212,27 @@ final class AutoPlayer
                     $fee = (int) (((array) ($rawObs['guild'] ?? []))['filing_fee'] ?? 0);
                     $novel = $sig !== '' && ! isset(self::PRODUCTION_COMBINES[$sig]) && ! isset($known[$sig]);
                     $purse = (int) (((array) $observation->getInventory())['credits'] ?? 0);
-                    if ($novel && $fee > 0 && $purse < $fee) {
+                    // A novel filing the referee has ALREADY explained away is
+                    // 50 credits for an answer we were given and kept. The
+                    // model proposes from vibes; the Guild's own record is the
+                    // correction. Affording it is not a reason to spend it.
+                    $lore = (array) ($rawObs['_combine_lore'] ?? []);
+                    $ingredients = array_map('strval', array_keys((array) ($decision['args']['ingredients'] ?? [])));
+                    if ($novel && $lore !== [] && ! Referee::worthFiling($ingredients, $lore)) {
+                        $note = Referee::refusalNote($ingredients, $lore) ?? 'the Guild has refused this shape before';
+                        $decision = $this->earnStep(
+                            $rawObs,
+                            (array) $observation->getInventory(),
+                            "not filing {$sig} — {$note}",
+                            $tried,
+                            $known,
+                            $stance,
+                            $departSelectSkip,
+                            $this->state->boardWants($agent_id),
+                            'combine',
+                        );
+                        $verb = (string) $decision['verb'];
+                    } elseif ($novel && $fee > 0 && $purse < $fee) {
                         $decision = $this->earnStep(
                             $rawObs,
                             (array) $observation->getInventory(),
