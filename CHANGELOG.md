@@ -6,6 +6,17 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.14.3] - 2026-09-25
+
+### Fixed
+- **A vetoed verb liquidated the hold.** `earnStep()` — the fallback every
+  last-gate veto routes through — sold a surplus FIRST, whatever the balance.
+  With 439,968 credits in the bank, the model's repeated `finalize` and `build`
+  proposals (vetoed: no cockpit, or a flying ship already exists) turned into
+  233 depot sales of iron, silicon and copper in 8 hours, at half value, each
+  reading "no credits to buy with". It now sells only below `CREDIT_FLOOR`;
+  otherwise it moves on to the ladder's next step.
+
 ## [3.14.2] - 2026-09-25
 
 ### Fixed

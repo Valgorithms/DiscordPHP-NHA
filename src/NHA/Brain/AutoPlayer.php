@@ -316,7 +316,16 @@ final class AutoPlayer
      */
     private function earnStep(array $rawObs, array $inv, string $lead, array $tried, array $known, string $stance, array $skip, array $boardWants, string $blockedVerb): array
     {
-        if (($cash = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, Ladder::protectedLines($boardWants, null, $inv))) !== null) {
+        // Sell only when actually short of money. This used to sell first,
+        // unconditionally — with 439,968 credits in the bank it dumped a lot of
+        // iron / silicon / copper at the depot's half price on nearly every
+        // vetoed turn (233 sales in 8 hours), each one reading "no credits to
+        // buy with". A blocked verb is a reason to do something else, not a
+        // reason to liquidate.
+        $credits = (int) ($inv['credits'] ?? $rawObs['credits'] ?? 0);
+        if ($credits < Ladder::CREDIT_FLOOR
+            && ($cash = Ladder::raiseCashStep($inv, Ladder::DEPOT_SAFE_LOT, Ladder::protectedLines($boardWants, null, $inv))) !== null
+        ) {
             return ['verb' => (string) $cash['verb'], 'args' => (array) $cash['args'], 'reason' => $lead . ' — ' . (string) $cash['why']];
         }
         $step = Ladder::suggestion($rawObs, $tried, $known, false, $stance, $skip);

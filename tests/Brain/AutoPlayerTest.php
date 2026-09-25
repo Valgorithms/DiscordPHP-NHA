@@ -2681,6 +2681,28 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * A vetoed verb is a reason to do something else, not to liquidate. The
+     * shared fallback sold a surplus FIRST, whatever the balance: with 439,968
+     * credits the agent dumped iron, silicon and copper at the depot's half
+     * price on nearly every vetoed turn — 233 sales in 8 hours, each reading
+     * "no credits to buy with".
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testARichAgentDoesNotSellJustBecauseAVerbWasVetoed(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+
+        $rich = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false,
+            'loose_parts' => ['frame'], 'inventory' => ['iron' => 1047, 'silicon' => 1070, 'copper' => 1073]]);
+        (new AutoPlayer($this->nhaWith($rich), $this->brainReturning('{"verb":"finalize","args":{}}'), $state))->step(142285, 'tok');
+
+        self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'still vetoed');
+        self::assertNotSame('sell', $this->posts[0][1]['verb'], '418k credits is not "no credits to buy with"');
+    }
+
+    /**
      * The `build` gate checked the part's base cost and never its `with:`
      * upgrade item, which the engine bills too — so `build jet with
      * ion_thruster` went out with no thruster in hold: "insufficient for jet
