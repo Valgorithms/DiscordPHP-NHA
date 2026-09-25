@@ -237,7 +237,9 @@ final class Playbook
               3. A gate refused your cargo → a shut window means that route is closed to you; wait for the window and
                  fly the long way, or pick a body the Destinations list says you can reach now.
               4. Nowhere you can reach has work → fund the colony you cannot reach with `invest{body,module,credits}`
-                 from right here. Credits buy its industrial lines; you are often the first funder it gets.
+                 from right here. Credits buy its industrial lines; you are often the first funder it gets. A colony
+                 marked NOT FOUNDED refuses money until someone lands there and lays it with
+                 construct{shape:'colony',body} — so that body is the goal, and step 2 is how you get there.
               5. Read Recent REJECTIONS before you act. Never resubmit an action whose rejection reason still applies.
 
             COMBAT & SOCIAL

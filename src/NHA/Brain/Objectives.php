@@ -53,13 +53,18 @@ final class Objectives
      *
      * @param array<string,mixed> $expansion a `GET /expansion` payload
      *
-     * @return list<array{body: string, module: string, label: string, remaining: array<string,int>, mine: array<string,int>, funders: int, buyable: bool, complete_pct: float}>
+     * `founded` is false for a board the world has PUBLISHED but nobody has
+     * yet LAID: it lists modules, but the engine refuses money for it until an
+     * agent lands and runs `construct{shape:'colony', body}` there.
+     *
+     * @return list<array{body: string, module: string, label: string, remaining: array<string,int>, mine: array<string,int>, funders: int, buyable: bool, founded: bool, complete_pct: float}>
      */
     public static function openModules(array $expansion, int $agent_id): array
     {
         $out = [];
         foreach ((array) ($expansion['bodies'] ?? []) as $body => $entry) {
             $colony = (array) (((array) $entry)['colony'] ?? []);
+            $founded = ($colony['colony_exists'] ?? true) !== false;
             foreach ((array) ($colony['modules'] ?? []) as $module) {
                 $module = (array) $module;
                 if (! empty($module['complete'])) {
@@ -84,7 +89,8 @@ final class Objectives
                     'remaining' => $remaining,
                     'mine' => array_map('intval', (array) (((array) ($module['contrib'] ?? []))[(string) $agent_id] ?? [])),
                     'funders' => (int) ($module['funders'] ?? 0),
-                    'buyable' => $buyable,
+                    'buyable' => $buyable && $founded,
+                    'founded' => $founded,
                     'complete_pct' => $needSum > 0 ? round(array_sum($have) / $needSum * 100, 1) : 0.0,
                 ];
             }
@@ -210,6 +216,28 @@ final class Objectives
     }
 
     /**
+     * Bodies whose colony board is published but not yet founded — nobody can
+     * invest until someone lands and lays it.
+     *
+     * @param array<string,mixed> $expansion
+     *
+     * @return list<string>
+     *
+     * @since 3.14.1
+     */
+    public static function unfoundedBodies(array $expansion): array
+    {
+        $out = [];
+        foreach ((array) ($expansion['bodies'] ?? []) as $body => $entry) {
+            if ((((array) (((array) $entry)['colony'] ?? []))['colony_exists'] ?? true) === false) {
+                $out[] = (string) $body;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * A compact, factual digest of the board for the model — used when the
      * deterministic ladder has run out of ideas and the agent is looping, so
      * the LLM is choosing from what the world actually says rather than from
@@ -240,7 +268,8 @@ final class Objectives
                 '- %s/%s (%s) %.0f%% done, needs %s; %d funders; %s',
                 $m['body'],
                 $m['module'],
-                $m['buyable'] ? 'creditable' : 'surface work',
+                ! $m['founded'] ? 'NOT FOUNDED — someone must land and lay it with construct{shape:colony} before anyone can fund it'
+                    : ($m['buyable'] ? 'creditable' : 'surface work'),
                 $m['complete_pct'],
                 implode(' + ', $bill),
                 $m['funders'],

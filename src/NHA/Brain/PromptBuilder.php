@@ -111,7 +111,12 @@ final class PromptBuilder
                 . ($open === [] ? '' : '; transit windows: ' . implode(', ', $open))
                 . (isset($expansion['how']) ? "\n  how: " . mb_substr((string) $expansion['how'], 0, 1800) : '');
 
-            $lines = array_merge($lines, self::destinationLines($raw, $colonyDone, (bool) ($lastDecision['gate_refuses_cargo'] ?? false)));
+            $lines = array_merge($lines, self::destinationLines(
+                $raw,
+                $colonyDone,
+                (bool) ($lastDecision['gate_refuses_cargo'] ?? false),
+                array_values(array_map('strval', (array) ($lastDecision['unfounded'] ?? []))),
+            ));
         }
 
         // How to make the gear standing between the agent and anywhere new —
@@ -432,12 +437,13 @@ final class PromptBuilder
      *
      * @param array<string,mixed> $raw
      * @param list<string>        $colonyDone
+     * @param list<string>        $unfounded  bodies whose colony is published but not laid
      *
      * @return list<string>
      *
      * @since 3.14.0
      */
-    private static function destinationLines(array $raw, array $colonyDone, bool $gateRefusesCargo): array
+    private static function destinationLines(array $raw, array $colonyDone, bool $gateRefusesCargo, array $unfounded = []): array
     {
         $bodies = Bodies::all($raw);
         if ($bodies === []) {
@@ -464,7 +470,11 @@ final class PromptBuilder
                 $b['dv_need'],
                 $route,
                 $gear === [] ? 'none' : implode(', ', $gear),
-                in_array((string) $body, $colonyDone, true) ? 'your share there is DONE — nothing to fund' : 'has colony work for you',
+                in_array((string) $body, $colonyDone, true)
+                    ? 'your share there is DONE — nothing to fund'
+                    : (in_array((string) $body, $unfounded, true)
+                        ? "colony NOT FOUNDED — someone must land there and lay it with construct{shape:'colony',body:'{$body}'} before anyone can invest in it"
+                        : 'has colony work for you'),
                 $blockers === [] ? '' : ' Engine: ' . implode(' / ', $blockers),
             );
         }
@@ -473,7 +483,7 @@ final class PromptBuilder
                 . 'depart will be refused again — wait for the window and fly the long way, or change the haul.';
         }
         $out[] = '  Where you cannot reach a body with work left, you can still fund its colony from anywhere with '
-            . 'invest{body,module,credits} — credits buy the industrial lines; body resources must be mined on site.';
+            . 'invest{body,module,credits} once it is FOUNDED — credits buy the industrial lines; body resources must be mined on site.';
 
         return $out;
     }

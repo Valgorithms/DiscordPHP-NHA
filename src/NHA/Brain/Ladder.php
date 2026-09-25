@@ -997,6 +997,16 @@ final class Ladder
         if ($credits < self::INVEST_MIN) {
             return null;
         }
+        // A board can be PUBLISHED before it is FOUNDED. `/colony/{body}` hands
+        // back Triton's full module plan while `colony_exists` is false, and the
+        // engine refuses money for it — "somebody has to GO there and lay it with
+        // construct{shape:'colony',body:'triton'} before it can be financed from
+        // afar". Nothing here ever read `colony_exists`, so the invest path would
+        // have filed that refusal once per cooldown, forever. A missing key is
+        // treated as founded, which is what every board before Season 8 was.
+        if (($board['colony_exists'] ?? true) === false) {
+            return null;
+        }
         $module = self::colonyNextModule($board);
         $body = (string) ($board['body'] ?? '');
         $key = (string) ($module['module'] ?? '');

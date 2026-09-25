@@ -6,6 +6,27 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.14.1] - 2026-09-25
+
+### Fixed
+- **Money was filed into a colony nobody had founded.** 3.14.0's first live
+  decision was `invest {triton, geyser_mast, 500}` — and the engine refused it:
+  *"no colony board on Triton yet — somebody has to GO there and lay it with
+  construct{shape:'colony',body:'triton'} before it can be financed from afar"*.
+  `/colony/{body}` publishes a board's full module plan before anyone has laid
+  it; `colony_exists` says which, and nothing in the brain ever read it. So the
+  invest path would have re-filed the same refusal once per cooldown, forever.
+  `endgameInvest()` now declines an unfounded board, and
+  `Objectives::openModules()` carries a `founded` flag so an unfounded board is
+  never "creditable". A missing key is treated as founded, which every board
+  before Season 8 was.
+
+### Added
+- `Objectives::unfoundedBodies()`, recorded with each objective-board read.
+- The model's destination digest, the board digest and the system prompt all
+  say when a colony is **NOT FOUNDED**, and what founding it takes — so the goal
+  is the body itself, not money it cannot yet accept.
+
 ## [3.14.0] - 2026-09-25
 
 ### Fixed

@@ -1238,6 +1238,7 @@ final class AutoPlayer
                 // module opens up as readily as it enters when we cap out.
                 $this->state->setColonyDone($agent_id, Objectives::bodiesWithNoWorkForUs($e, $agent_id));
                 $this->state->recordObjectives($agent_id, $tick, Objectives::digest($e, $agent_id));
+                $this->state->recordUnfounded($agent_id, Objectives::unfoundedBodies($e));
                 // What a board still wants that the depot actually sells —
                 // the quartermaster stocks toward it so the credits and
                 // materials are there when a body opens up.
@@ -1483,6 +1484,7 @@ final class AutoPlayer
                 array_flip(['_colony_done', '_fuel_goal', '_board_wants', '_combine_lore']),
             );
             $context['gate_refuses_cargo'] = $this->state->gateRefusesCargo($agent_id, $tick);
+            $context['unfounded'] = $this->state->unfounded($agent_id);
             // A rejection used to be shown for exactly ONE turn — and a single
             // applied hold turn afterwards pushed it out of the model's view, so
             // the gate refusal was forgotten and re-earned every cycle.

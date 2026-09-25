@@ -284,6 +284,53 @@ final class ReachabilityTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/SUGGESTED next action: depart/u', $prompt, 'never steered toward a refused trip');
     }
 
+    /**
+     * A board can be PUBLISHED before it is FOUNDED. `/colony/triton` returned
+     * the whole module plan while `colony_exists` was false, and the engine
+     * refused the first investment: "somebody has to GO there and lay it". The
+     * brain never read that field, so it would have re-filed the refusal once
+     * per invest cooldown, forever.
+     *
+     * @covers \NHA\Brain\Ladder::endgameInvest
+     */
+    public function testAnUnfoundedColonyIsNotInvestedIn(): void
+    {
+        $board = ['body' => 'triton', 'complete' => false, 'modules' => [[
+            'module' => 'geyser_mast', 'complete' => false, 'contrib' => [],
+            'need' => ['superalloy' => 180], 'remaining' => ['superalloy' => 180],
+        ]]];
+
+        self::assertNull(Ladder::endgameInvest($board + ['colony_exists' => false], 142285, 418017), 'published, not founded');
+        self::assertNotNull(Ladder::endgameInvest($board + ['colony_exists' => true], 142285, 418017), 'founded — fund away');
+        self::assertNotNull(Ladder::endgameInvest($board, 142285, 418017), 'no key at all is every pre-Season-8 board: founded');
+    }
+
+    /**
+     * The objective board and the model are told the same thing, so neither
+     * treats an unfounded colony as a place money can go.
+     *
+     * @covers \NHA\Brain\Objectives
+     */
+    public function testTheBoardAndTheModelBothKnowAColonyIsUnfounded(): void
+    {
+        $expansion = ['bodies' => [
+            'triton' => ['colony' => ['colony_exists' => false, 'modules' => [[
+                'module' => 'geyser_mast', 'complete' => false, 'contrib' => [], 'funders' => 0,
+                'need' => ['titanium' => 200], 'have' => [], 'remaining' => ['titanium' => 200],
+            ]]]],
+            'mars' => ['colony' => ['colony_exists' => true, 'modules' => []]],
+        ]];
+
+        self::assertSame(['triton'], \NHA\Brain\Objectives::unfoundedBodies($expansion));
+        self::assertNull(\NHA\Brain\Objectives::fundableWithCredits($expansion, 142285), 'titanium is buyable, but not into an unfounded board');
+        self::assertStringContainsString('NOT FOUNDED', \NHA\Brain\Objectives::digest($expansion, 142285));
+
+        $prompt = PromptBuilder::build(new AgentObservation(142285, $this->world()), [
+            'colony_done' => self::DONE, 'unfounded' => ['triton'], 'recent' => [],
+        ]);
+        self::assertMatchesRegularExpression("/triton: .*NOT FOUNDED — someone must land there and lay it/u", $prompt);
+    }
+
     /** An overrun hold is named as a failure, not left as a silent wait. */
     public function testAHoldThatOverranItsEstimateIsNamedAsFailed(): void
     {

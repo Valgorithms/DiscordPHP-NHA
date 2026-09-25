@@ -538,6 +538,26 @@ trait LoopStrategyStateTrait
     }
 
     /**
+     * Bodies whose colony is published but not yet founded, from the last
+     * objective-board read. Nobody can invest in one until it is laid on site.
+     *
+     * @param list<string> $bodies
+     *
+     * @since 3.14.1
+     */
+    public function recordUnfounded(int $agent_id, array $bodies): void
+    {
+        $this->data['agent_unfounded'][(string) $agent_id] = array_values(array_map('strval', $bodies));
+        $this->save();
+    }
+
+    /** @return list<string> */
+    public function unfounded(int $agent_id): array
+    {
+        return array_values(array_map('strval', (array) ($this->data['agent_unfounded'][(string) $agent_id] ?? [])));
+    }
+
+    /**
      * Turns spent holding in the depart band with the trip home unaffordable.
      *
      * The return leg has no ladder rung and no way to earn: in orbit the agent

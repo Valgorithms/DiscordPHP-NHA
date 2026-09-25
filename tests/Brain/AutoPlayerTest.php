@@ -2604,7 +2604,9 @@ class AutoPlayerTest extends NHAUnitTestCase
         $state = new StateStore($this->statePath);
         $this->markDone($state, 142285, ['deimos', 'mars']);
 
-        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0]);
+        // Founded — the premise here is WHICH board gets the money. The live
+        // Triton was not founded yet; that case has its own test below.
+        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => true]);
         // Route per body. The plain double serves ONE payload to every GET, so
         // fetching a finished colony's board returned Triton's too — which
         // made this test pass against the very bug it exists to catch.
@@ -2635,6 +2637,25 @@ class AutoPlayerTest extends NHAUnitTestCase
         $post = $this->posts[0][1];
         self::assertSame('invest', $post['verb'], 'the only lever left is money, from here');
         self::assertSame('triton', $post['args']['body'], 'into the board that still needs it — not a finished one');
+    }
+
+    /**
+     * The live case: Triton's board is published but `colony_exists` is false,
+     * and the engine refused the investment — "somebody has to GO there and lay
+     * it". Filing it anyway would re-earn that refusal once per invest cooldown.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnUnfoundedColonyGetsNoInvestmentFiled(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+
+        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false]);
+        $player = new AutoPlayer($this->nhaWith($grounded), $this->brainReturning('{"verb":"sell","args":{"resource":"crystal","n":20}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertNotSame('invest', $this->posts[0][1]['verb'], 'money cannot go into a colony nobody has laid');
     }
 
     /**
