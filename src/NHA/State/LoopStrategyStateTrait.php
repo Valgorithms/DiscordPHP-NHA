@@ -464,6 +464,80 @@ trait LoopStrategyStateTrait
     }
 
     /**
+     * How long a warp gate's refusal of our body cargo is trusted before the
+     * agent may probe it again. One refused `depart` per window of this is a
+     * cheap way to notice the haul has shrunk; one per turn was the stall.
+     *
+     * @since 3.14.0
+     */
+    private const GATE_CARGO_REFUSAL_TICKS = 600;
+
+    /**
+     * Records that a warp gate refused this agent's body cargo.
+     *
+     * Learned from the engine's own rejection text rather than predicted from a
+     * list of "exotic" resources: the rulebook names fourteen today, Season 8
+     * added six of them, and a table here would be the next thing to go stale.
+     *
+     * @since 3.14.0
+     */
+    public function recordGateCargoRefusal(int $agent_id, int $tick): void
+    {
+        $this->data['agent_gate_cargo_refused'][(string) $agent_id] = $tick;
+        $this->save();
+    }
+
+    /** The tick of the newest recorded gate cargo refusal, or 0. */
+    public function gateCargoRefusedAt(int $agent_id): int
+    {
+        return (int) ($this->data['agent_gate_cargo_refused'][(string) $agent_id] ?? 0);
+    }
+
+    /** Whether a gate has refused our cargo recently enough to believe it still would. */
+    public function gateRefusesCargo(int $agent_id, int $tick): bool
+    {
+        $last = $this->data['agent_gate_cargo_refused'][(string) $agent_id] ?? null;
+        if (! is_numeric($last) || $tick <= 0) {
+            return false;
+        }
+
+        return ($tick - (int) $last) < self::GATE_CARGO_REFUSAL_TICKS;
+    }
+
+    /**
+     * When the current orbital hold began, and how long it EXPECTED to wait —
+     * the soonest window among the destinations actually worth reaching, read
+     * off the live observation at the moment the hold started. Recorded once
+     * per hold, so a window that opens and shuts without a departure shows up
+     * as a hold that has overrun its own estimate.
+     *
+     * @return array{tick:int,expect:int}
+     *
+     * @since 3.14.0
+     */
+    public function holdStarted(int $agent_id, int $tick, int $expect): array
+    {
+        $key = (string) $agent_id;
+        $h = $this->data['agent_hold_started'][$key] ?? null;
+        if (! is_array($h)) {
+            $h = ['tick' => $tick, 'expect' => max(0, $expect)];
+            $this->data['agent_hold_started'][$key] = $h;
+            $this->save();
+        }
+
+        return ['tick' => (int) $h['tick'], 'expect' => (int) $h['expect']];
+    }
+
+    /** The agent is not holding — forget the hold that was. */
+    public function clearHoldStarted(int $agent_id): void
+    {
+        if (isset($this->data['agent_hold_started'][(string) $agent_id])) {
+            unset($this->data['agent_hold_started'][(string) $agent_id]);
+            $this->save();
+        }
+    }
+
+    /**
      * Turns spent holding in the depart band with the trip home unaffordable.
      *
      * The return leg has no ladder rung and no way to earn: in orbit the agent

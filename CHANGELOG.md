@@ -6,6 +6,83 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-09-25
+
+### Fixed
+- **A permanent orbital "hold" for a destination that could never be reached.**
+  Agent #142285 spent days riding the elevator up and down, "holding for a
+  transfer window to open" for Triton — the last body with colony work. The
+  window was never the obstacle: Triton needs a `thermal_core`, and no rung makes
+  one. `Ladder::isHoldingForWindow()` asked only "is there no departable target
+  *right now*", which is true forever once nothing reachable has work left. It
+  now requires a live destination actually waiting on a window.
+- **The hold switched off the only escape hatch.** Holding suppresses the loop
+  guard, and the loop guard is the road to escalating a stall to the model — so
+  in four days the model was never once asked. A hold is now bounded by its own
+  estimate (the soonest reachable window, read when it began, plus
+  `AutoPlayer::HOLD_GRACE_TICKS`); past that, the hold is declared failed and
+  the loop guard comes back.
+- **The invest-from-Earth path only ever looked at finished colonies.** The
+  remote board rotated through `$doneBodies`, which by definition have nothing
+  left to fund. It now prefers a body with work left that the agent cannot
+  reach — Triton, with zero funders on all three modules and 418k credits in the
+  agent's bank — and falls back to the old rotation.
+- **`departTarget()` was called bare, directly under a comment warning that a
+  bare call "silently defaults to an empty skip list".** The ladder itself would
+  have flown to a colony finished weeks ago the moment its window opened.
+- **The hold check was given the hull-rejections list, not the full skip list**,
+  so a finished colony counted as a reason to keep waiting.
+- **"Nowhere to go" was read as "no ship"** and would have geared up a second
+  flyer. `$hasShip` is false both when the hull cannot reach anywhere (rebuild
+  it) and when there is nowhere worth reaching (a new hull changes nothing). The
+  two are now told apart, using colony-done on its own (`_colony_done`), since
+  the merged skip list cannot distinguish them.
+- **A leftover strand counter was a loaded gun.** `agent_home_holds` sat at 65
+  from an old trip, past the 40 that calls `distress` — the next underfuelled
+  return would have spent HP and jettisoned its whole haul on its first turn.
+  It is now cleared whenever the agent is not at, or returning from, a body.
+- `endgameInvest()` no longer promises every investment "cuts Mars+Venus Δv",
+  which only a moon base delivers.
+
+### Added
+- **`Bodies::reachable()` / `missingGear()` / `gateLinked()` and
+  `Bodies::CRAFTABLE_GEAR`.** A destination is reachable when every item its
+  arrival consumes is in hand or has a crafting rung. `CRAFTABLE_GEAR` is the one
+  deliberately hand-kept table: it describes this code, not the game.
+- **`Ladder::departRefusal()` — a last gate on `depart`**, the final refusable
+  verb that reached the engine unchecked when the model proposed it. It judges
+  only what the ENGINE would refuse (gear not in hold, a shut window with no gate,
+  a gate that has refused our cargo, a hull already refused) and never whether a
+  trip is worth making: an earlier cut also refused finished colonies, which
+  would have vetoed flying to Mars for the `mars_ice` a `thermal_core` needs.
+- **A warp gate's cargo refusal is learned from the engine's own words**
+  (`recordGateCargoRefusal()`), not predicted from a list of exotic resources.
+
+### Changed — what the local model is given
+- **A per-destination digest** built from the engine's own preflight: Δv,
+  window or gate, each piece of arrival gear marked `(have)` / `(MISSING)`,
+  whether the colony still has work for this agent, and the engine's blockers
+  in its own words. The model used to see `titan OPEN` and nothing else.
+- **Recipes for missing gear, from the `/rules` codex**, with one level of
+  sub-recipe (a `thermal_core` needs a battery; a battery has a recipe too). The
+  codex fetch had been throwing this text away every turn.
+- **Rejections persist across turns** — the engine's recent refusals in its own
+  words, deduplicated with numbers stripped. A rejection used to be shown for
+  exactly one turn, so the gate refusal was forgotten and re-earned every cycle.
+- **`how` is no longer cut at 400 characters.** The gear recipes ("PACK BEFORE
+  YOU FLY…") started after that, so they were always the part cut off.
+- **The "SUGGESTED next action" is computed from the ladder's own view** — its
+  real stance, skip list and injected hints. It had run as `homestead` with an
+  empty skip list on the bare observation, a different agent from the one
+  deciding.
+- **The system prompt no longer lists four destinations.** The `depart` verb
+  reference named deimos/phobos/mars/venus only, telling the model the outer
+  bodies were not valid. It now points at the live list, and a new *WHEN YOU
+  CANNOT GET THERE* procedure walks the model from a blocked destination to its
+  missing gear, that gear's recipe, the body that yields its inputs, and — when
+  nothing is reachable — `invest` from where it stands.
+- A hold that overruns its estimate is named to the model as **HOLD FAILED**.
+
 ### Fixed
 - **`composer install` could not resolve from Packagist.** DiscordPHP's
   `dev-master` now requires `discord-php/http ^10.9.8`, which the

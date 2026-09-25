@@ -47,6 +47,18 @@ final class PromptBuilder
         // once so every field access below is uniform.
         $raw = json_decode(json_encode($observation->jsonSerialize()), true);
         $raw = is_array($raw) ? $raw : [];
+        // See the world the LADDER sees. {@see AutoPlayer} enriches its copy of
+        // the observation with bookkeeping the engine does not publish (which
+        // colonies are done, the learned fuel goal, the Guild's verdicts); the
+        // model was shown the bare observation, so its "SUGGESTED next action"
+        // was computed from a blinder state than the ladder's own decisions —
+        // and happily suggested flying to a colony finished weeks ago.
+        foreach ((array) ($lastDecision['hints'] ?? []) as $k => $v) {
+            $raw[(string) $k] = $v;
+        }
+        $skip = array_values(array_map('strval', (array) ($lastDecision['depart_skip'] ?? [])));
+        $colonyDone = array_values(array_map('strval', (array) ($lastDecision['colony_done'] ?? [])));
+        $stance = (string) ($lastDecision['stance'] ?? 'homestead');
         $get = static fn(string $key, $default = null) => $raw[$key] ?? $default;
         $arr = static fn(string $key): array => (array) ($raw[$key] ?? []);
         $count = static fn(string $key): int => count((array) ($raw[$key] ?? []));
@@ -91,9 +103,26 @@ final class PromptBuilder
                     ? "{$body} OPEN"
                     : "{$body} in " . (is_array($w) ? (string) ($w['opens_in'] ?? '?') : '?');
             }
+            // `how` was cut at 400 characters — and the engine's gear recipes
+            // ("PACK BEFORE YOU FLY: heat_shield (superalloy+composite), …")
+            // start well past that, so the one paragraph on how to become able
+            // to go somewhere was always the part the model never saw.
             $lines[] = 'Expansion: at_body=' . ($atBody ?? 'none')
                 . ($open === [] ? '' : '; transit windows: ' . implode(', ', $open))
-                . (isset($expansion['how']) ? "\n  how: " . mb_substr((string) $expansion['how'], 0, 400) : '');
+                . (isset($expansion['how']) ? "\n  how: " . mb_substr((string) $expansion['how'], 0, 1800) : '');
+
+            $lines = array_merge($lines, self::destinationLines($raw, $colonyDone, (bool) ($lastDecision['gate_refuses_cargo'] ?? false)));
+        }
+
+        // How to make the gear standing between the agent and anywhere new —
+        // the codex's own words, including one level of sub-recipe (a
+        // thermal_core needs a battery, and a battery has a recipe too).
+        $recipes = array_filter((array) ($lastDecision['recipes'] ?? []), 'is_string');
+        if ($recipes !== []) {
+            $lines[] = 'Recipes for gear you are missing (from the world codex — combine the inputs to make them):';
+            foreach ($recipes as $item => $needs) {
+                $lines[] = "  {$item} = " . mb_substr($needs, 0, 220);
+            }
         }
 
         if ($inventory) {
@@ -242,6 +271,27 @@ final class PromptBuilder
             );
         }
 
+        // The engine's recent refusals, in its own words, across turns — not
+        // just last turn's. A single applied turn in between used to erase a
+        // rejection from view, which is how the same refusal was re-earned.
+        $rejections = array_filter((array) ($lastDecision['rejections'] ?? []), 'is_array');
+        if ($rejections !== []) {
+            $lines[] = 'Recent REJECTIONS (the engine\'s own reasons — do not repeat one unless the reason no longer applies):';
+            foreach ($rejections as $r) {
+                $lines[] = sprintf('  %s, %d ticks ago: "%s"', (string) ($r['verb'] ?? '?'), (int) ($r['ago'] ?? 0), (string) ($r['result'] ?? ''));
+            }
+        }
+
+        // The orbital hold ran past its own estimate: the window it was waiting
+        // for came and went with the agent still here. Say so plainly — this is
+        // the stall the code has no rung for, and the reason the model is being
+        // asked at all.
+        if (($overrun = (int) ($lastDecision['hold_overrun'] ?? 0)) > 0) {
+            $lines[] = "HOLD FAILED: you have held in orbit for {$overrun} ticks and the window you were waiting for has "
+                . 'passed without a departure. Waiting longer will not fix it. Use the Destinations list above to find '
+                . 'what is actually blocking you, and act on that instead.';
+        }
+
         // Loop guard fired: the loop runner has detected repetition and forced a
         // new objective for this turn. Tell the model plainly.
         $forcedObjective = (string) ($lastDecision['forced_objective'] ?? '');
@@ -347,7 +397,11 @@ final class PromptBuilder
                 . '(aluminium + carbon) — you cannot build one yet, so do not keep trying.';
         }
 
-        if ($suggestion = Ladder::suggestion($raw, $tried, array_fill_keys($knownCombines, true))) {
+        // With the ladder's real stance and skip list. Without them this ran as
+        // `homestead` with an empty skip list — a different agent than the one
+        // actually deciding — so the line the model is told to follow "unless
+        // you clearly see something better" could point at a finished colony.
+        if ($suggestion = Ladder::suggestion($raw, $tried, array_fill_keys($knownCombines, true), true, $stance, $skip)) {
             $lines[] = sprintf(
                 'SUGGESTED next action: %s%s — %s. Do this unless you clearly see something better.',
                 $suggestion['verb'],
@@ -359,6 +413,69 @@ final class PromptBuilder
         $lines[] = 'Choose one action. Reply with JSON only.';
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * One line per destination: its Δv, whether its window is open (or a warp
+     * gate spans it), the arrival gear it consumes and whether the agent holds
+     * each piece, whether it has work left for this agent, and the engine's own
+     * blockers in the engine's own words.
+     *
+     * This is the block that lets the model reason about "I cannot get there"
+     * rather than guess at it. It was shown `titan OPEN` and nothing else, so it
+     * could not know Titan needs a thermal_core it lacked, nor that Deimos had
+     * been finished for weeks — and proposed flying there for days.
+     *
+     * The "not in Earth orbit" blocker is dropped: it is about where the agent
+     * stands right now, which the position line already says, and it appears
+     * on every row, drowning the blockers that are about the destination.
+     *
+     * @param array<string,mixed> $raw
+     * @param list<string>        $colonyDone
+     *
+     * @return list<string>
+     *
+     * @since 3.14.0
+     */
+    private static function destinationLines(array $raw, array $colonyDone, bool $gateRefusesCargo): array
+    {
+        $bodies = Bodies::all($raw);
+        if ($bodies === []) {
+            return [];
+        }
+        $inv = (array) ($raw['inventory'] ?? []);
+        $out = ['Destinations (depart from Earth orbit, altitude 300-600 — requirements are the engine\'s own):'];
+        foreach ($bodies as $body => $b) {
+            $gear = [];
+            foreach ($b['needs_in_hold'] as $item) {
+                $gear[] = ((int) ($inv[$item] ?? 0)) > 0 ? "{$item} (have)" : "{$item} (MISSING)";
+            }
+            $route = $b['open'] ? 'window OPEN' : "window opens in {$b['opens_in']} ticks";
+            if (Bodies::gateLinked($raw, (string) $body)) {
+                $route .= '; a warp gate joins it (ignores the window, but carries body cargo only in warp_container crates)';
+            }
+            $blockers = array_values(array_filter(
+                $b['blockers'],
+                static fn(string $x): bool => ! str_contains(strtolower($x), 'not in earth orbit'),
+            ));
+            $out[] = sprintf(
+                '  %s: Δv %d; %s; arrival gear: %s; %s.%s',
+                $body,
+                $b['dv_need'],
+                $route,
+                $gear === [] ? 'none' : implode(', ', $gear),
+                in_array((string) $body, $colonyDone, true) ? 'your share there is DONE — nothing to fund' : 'has colony work for you',
+                $blockers === [] ? '' : ' Engine: ' . implode(' / ', $blockers),
+            );
+        }
+        if ($gateRefusesCargo) {
+            $out[] = '  A warp gate recently REFUSED your body cargo (see Recent REJECTIONS). While a window is shut a gated '
+                . 'depart will be refused again — wait for the window and fly the long way, or change the haul.';
+        }
+        $out[] = '  Where you cannot reach a body with work left, you can still fund its colony from anywhere with '
+            . 'invest{body,module,credits} — credits buy the industrial lines; body resources must be mined on site.';
+
+        return $out;
     }
 
     /**

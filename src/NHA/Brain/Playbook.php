@@ -59,7 +59,7 @@ final class Playbook
         'land' => 'no args — controlled descent toward the ground',
         'land_moon' => 'no args — descend from lunar orbit (alt 600) onto the Moon surface',
         'land_body' => 'no args — descend onto the body you have arrived at (Mars/Venus/Phobos/Deimos)',
-        'depart' => 'dest:"deimos"|"phobos"|"mars"|"venus"|"earth" — commit a fueled ion-thruster ship to an interplanetary transfer from Earth orbit while dest\'s window is open',
+        'depart' => 'dest:string — any body on the per-turn Destinations list, or "earth" to return. Commit a fueled ion-thruster ship from Earth orbit (alt 300-600) with that body\'s arrival gear IN HOLD, while its window is open — or any time through a warp gate, which carries body cargo only in warp_container crates',
         'distress' => 'no args — emergency recall to Earth orbit when stranded off-world (costs HP, JETTISONS your body haul — a fueled depart{dest:earth} is always better)',
         'dock' => 'no args — latch onto an asteroid while in orbit (alt 300-599, within 2 cells)',
         'attune' => 'no args — bond with a nearby ancient artifact for a lasting boon',
@@ -129,14 +129,16 @@ final class Playbook
 
             HOW YOU MOVE THE MISSION (once you are safe, armed and fed)
             1. REACH A BODY & BUILD THERE — the only thing that actually scores the Accord.
-               • On Earth, PACK FIRST: craft `heat_shield` (superalloy+composite), and for Venus also
-                 `acid_skin` (acid/sulfur+rubber); `buy cryo_fuel` for the tanks. Build the ~14-part FLYER
+               • On Earth, PACK FIRST: every destination names its arrival gear on the Destinations list each turn
+                 (heat_shield, acid_skin, thermal_core, …) and the recipe for any you lack is shown too; `buy
+                 cryo_fuel` for the tanks. Build the ~14-part FLYER
                  (§3) and `finalize` it — the `jet` must be built `with:{ion_thruster:1}` so it counts as the
                  orbital_engine `depart` requires.
                • `ride` the elevator (free) or `launch` to Earth orbit (alt ≥ 300).
-               • `depart{dest}` while that body's `expansion.windows[dest].open` is true — Δv gates: deimos 50,
-                 phobos 55, mars 100, venus 130 (your ship's Δv must clear it). If every window is closed, keep
-                 earning on Earth and re-check.
+               • `depart{dest}` while that body's window is open (the Destinations list gives each body's Δv, window,
+                 gate and gear — your ship's Δv must clear it). If every window you can use is shut, keep earning on
+                 Earth and re-check. If a body is blocked by GEAR rather than a window, waiting will never fix it —
+                 see WHEN YOU CANNOT GET THERE below.
                • On arrival `land_body` (or `land_moon` from lunar orbit at alt 600).
                • On the body: `construct{shape:'colony', body, module}` to fund the co-op base (moons need 2
                  funders, Mars/Venus 3); `construct{shape:'extractor', kind, body}` for income that keeps
@@ -179,8 +181,8 @@ final class Playbook
                / `land_moon`. If you are ON the body → `construct{shape:'colony',body,module}` for the co-op base,
                `construct{shape:'extractor',kind,body}` for standing income, or `construct{shape:'terraform',body,stage}`
                once the colony is complete. THIS is the mission — do it before anything on Earth.
-            4. GO. If you are flight-ready (a `finalize`d ship with an `ion_thruster` + fuel; `heat_shield` in hold
-               for Mars/Venus, +`acid_skin` for Venus) and in Earth orbit (alt ≥ 300) and some `expansion.windows[b].open`
+            4. GO. If you are flight-ready (a `finalize`d ship with an `ion_thruster` + fuel, and the body's arrival gear
+               from the Destinations list in hold) and in Earth orbit (alt ≥ 300) and some `expansion.windows[b].open`
                is true and your ship's Δv clears that gate → `depart{dest:b}` for the nearest such body (prefer a moon
                first — a Forward Base cheapens every later route). If flight-ready but still on the ground → `ride` the
                elevator base (free) or `launch` toward orbit.
@@ -219,11 +221,24 @@ final class Playbook
             - SPACE: you spawn near a finished elevator — `move` to its base cell and `ride` (free, no fuel). In
               orbit (alt 300-599) `dock` an asteroid then `mine` iridium/nickel. `construct shape=station module=...`
               needs you `in_space` and ≥ 3 funders; one agent funds ≤ 40% of any resource.
-            - EXPANSION (current era): craft `heat_shield`, `acid_skin`, `hydrogen` ON EARTH before you fly. `depart`
-              needs a flying ship with an `ion_thruster` + fuel, from Earth orbit, while that body's transit
-              `window.open` is true — if all windows are closed, keep earning on Earth and check back. On a body,
+            - EXPANSION (current era): craft each body's arrival gear ON EARTH before you fly — the Destinations list
+              names it per body and marks what you are MISSING. `depart` needs a flying ship with an `ion_thruster` +
+              fuel, from Earth orbit, while that body's window is open; a warp gate at both ends ignores the window
+              but moves body cargo (regolith, ices, …) ONLY inside warp_container crates. On a body,
               `construct shape=extractor` for income that keeps dripping after you fly home; fund `colony` then
               `terraform` stages toward the Accord.
+
+            WHEN YOU CANNOT GET THERE — work the problem, do not wait on it:
+              1. Read that body's Destinations line. "window opens in N" is a wait; "(MISSING)" gear is not — no
+                 amount of waiting produces gear.
+              2. Missing gear → read its recipe under "Recipes for gear you are missing". The ingredient you lack is
+                 your real target: buy it, craft it, or mine it. If it is a BODY resource (e.g. mars_ice), you must go
+                 to that body for it first — a finished colony is still a place to mine.
+              3. A gate refused your cargo → a shut window means that route is closed to you; wait for the window and
+                 fly the long way, or pick a body the Destinations list says you can reach now.
+              4. Nowhere you can reach has work → fund the colony you cannot reach with `invest{body,module,credits}`
+                 from right here. Credits buy its industrial lines; you are often the first funder it gets.
+              5. Read Recent REJECTIONS before you act. Never resubmit an action whose rejection reason still applies.
 
             COMBAT & SOCIAL
             - Do not start fights you cannot clearly win (need weapon + ammo + range + line-of-sight; armor cuts damage).

@@ -791,6 +791,15 @@ final class Ladder
      * gets a real `depart` rejection the moment it tries, which DOES enter
      * `$unreachable`. Both paths make progress; the exclusion made none.
      *
+     * The same test, drawn correctly, IS worth applying to gear nothing can
+     * make ({@see Bodies::reachable()}). Season 8's outer bodies need a
+     * `thermal_core`, and no rung produces one — so Triton, the last body with
+     * colony work, counted as live, kept the hull "capable", and held the agent
+     * in orbit for days waiting on a window that was never the obstacle. It
+     * also kept `$noDestinations` false, which is the only thing that opens the
+     * fund-it-with-credits path, with 418k credits in the bank. Venus's
+     * `acid_skin` still counts as reachable here, for exactly the reason above.
+     *
      * @param list<string> $unreachable dests written off (state: `agent_depart_unreachable` + colony-done)
      *
      * @return list<string>
@@ -799,7 +808,75 @@ final class Ladder
      */
     public static function liveDestinations(array $unreachable = [], array $raw = []): array
     {
-        return array_values(array_diff(Bodies::names($raw), $unreachable));
+        return array_values(array_filter(
+            array_diff(Bodies::names($raw), $unreachable),
+            static fn(string $b): bool => Bodies::reachable($raw, $b),
+        ));
+    }
+
+    /**
+     * Why the ENGINE would refuse a `depart` for `$dest` — or `null` when it has
+     * a real chance of landing.
+     *
+     * `depart` was the last refusable verb to reach the engine unchecked when
+     * the MODEL proposed it: the orbital hold waves it through, because a depart
+     * is normally the very thing the hold is waiting for. Live, the model
+     * proposed `depart deimos` with the window shut for 537 ticks; the
+     * Earth↔Deimos gate took the route and refused it, because the agent carried
+     * 3.5M units of `c_regolith` and a gate moves body cargo only in crates.
+     * Unchanged observation, same proposal a few dozen ticks later, for days.
+     *
+     * Deliberately judges ONLY what the engine would refuse, never whether the
+     * trip is worth making. An earlier cut of this also refused a finished
+     * colony as "nothing left to fund" — which would have vetoed the exact plan
+     * the model can now see: fly to Mars (finished) for the `mars_ice` a
+     * thermal_core needs, to reach Triton (unfinished). A last-gate check that
+     * encodes strategy stops the model solving what the code cannot. Whether to
+     * go is the model's and the ladder's call; whether it can land is this one.
+     *
+     * `earth` is left to the trip-home state machine and never judged here.
+     *
+     * @param array<string,mixed> $raw
+     * @param list<string>        $refused          destinations the engine has already
+     *                                              refused this HULL for (TWR, gear) —
+     *                                              NOT colony-done, which is strategy
+     * @param bool                $gateRefusesCargo a gate refused this agent's body
+     *                                              cargo recently (the engine's words)
+     *
+     * @since 3.14.0
+     */
+    public static function departRefusal(array $raw, string $dest, array $refused, bool $gateRefusesCargo = false): ?string
+    {
+        if ($dest === '' || $dest === 'earth') {
+            return null;
+        }
+        $b = Bodies::all($raw)[$dest] ?? null;
+        if ($b === null) {
+            return "{$dest} is not a destination the world offers";
+        }
+        if (in_array($dest, $refused, true)) {
+            return "the engine has already refused this hull for {$dest}";
+        }
+        // What is actually in hold, not what could be made: the engine refuses
+        // a Mars launch without a heat_shield even though one is craftable.
+        $inv = (array) ($raw['inventory'] ?? []);
+        $lacking = array_values(array_filter(
+            $b['needs_in_hold'],
+            static fn(string $item): bool => (int) ($inv[$item] ?? 0) < 1,
+        ));
+        if ($lacking !== []) {
+            return "{$dest} needs " . implode(' + ', $lacking) . ' in hold before launch';
+        }
+        if (! $b['open']) {
+            if (! Bodies::gateLinked($raw, $dest)) {
+                return "the {$dest} window is shut for {$b['opens_in']} more ticks and no gate joins it";
+            }
+            if ($gateRefusesCargo) {
+                return "the {$dest} gate refuses our body cargo — fly it the long way when the window opens in {$b['opens_in']}";
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -937,7 +1014,9 @@ final class Ladder
         return [
             'verb' => 'invest',
             'args' => ['body' => $body, 'module' => $key, 'credits' => $spend],
-            'why' => "nowhere left to fly — put {$spend} credits into {$body}/{$key}; finishing it cuts Mars+Venus Δv by 5 world-wide and unlocks the warp gate",
+            // Keep the reason true for every body: this once promised a Mars and
+            // Venus Δv cut on every investment, which only a moon base delivers.
+            'why' => "nowhere this agent can fly has work left — put {$spend} credits into {$body}/{$key} from here; credits buy its industrial lines, and every funder counts toward the co-op minimum",
         ];
     }
 
@@ -1048,6 +1127,17 @@ final class Ladder
             return false;
         }
         if (self::inTransit($raw) || self::atBody($raw) !== null || ! self::hasOrbitalShip($raw)) {
+            return false;
+        }
+        // A hold is a wait for a WINDOW, so there has to be somewhere worth
+        // going whose only obstacle is the window. Without this the test below
+        // — "no departable target right now" — is true forever once nothing is
+        // reachable, and "hold" becomes a permanent state: live, #142285 spent
+        // days in this branch, riding the elevator up and down to station-keep
+        // for Triton, which needs a thermal_core no rung makes. Worse, the hold
+        // switches off the loop guard, so the one mechanism built to escalate a
+        // stall to the model could never fire.
+        if (self::liveDestinations($unreachable, $raw) === []) {
             return false;
         }
 
@@ -2393,6 +2483,23 @@ final class Ladder
             // Mars, low-TWR Venus) is a dead end — fall through to GEAR UP a
             // fresh flyer, since finalize cannot amend the existing one.
             $hasShip = self::hasDepartCapableShip($raw, $departUnreachable);
+            // `$hasShip` answers "can this hull reach somewhere worth going",
+            // and it is false for two very different reasons: the HULL cannot
+            // (too heavy, gearless — rebuild it), or there is nowhere to go (every
+            // body funded, or the rest need gear no rung can make — a new hull
+            // changes nothing). Conflating them had the on-ground branch below
+            // gear up a whole second flyer because Triton wanted a thermal_core.
+            //
+            // The skip list cannot tell those apart — it merges colony-done
+            // bodies with ones the hull was REJECTED for, and the second is
+            // precisely the case a rebuild fixes. So this asks the narrower
+            // question on its own evidence: is there any body with work left
+            // whose arrival gear can be had? If not, no hull will help.
+            $worthAHull = array_filter(
+                array_diff(Bodies::names($raw), (array) ($raw['_colony_done'] ?? [])),
+                static fn(string $b): bool => Bodies::reachable($raw, $b),
+            );
+            $nowhereToFly = self::hasOrbitalShip($raw) && $worthAHull === [];
             $fuelUnits = $has('hydrogen') + $has('cryo_fuel') + $has('helium3');
             $fuelled = $fuelUnits > 0;
             // "flight-ready" means the ship can actually make a transfer, not
@@ -2409,8 +2516,17 @@ final class Ladder
             // here needs a vehicle, and `land` is rejected outright. Get back
             // down and build one.
             if ($inSpace && ! $hasShip) {
-                return self::descentWithoutShip($raw)
+                $down = self::descentWithoutShip($raw)
                     ?? self::noop($raw, 'expansionist — no ship in space, hold for decay then gear up');
+                // Say the true thing. "No ship up here" is wrong when there IS a
+                // ship and simply nowhere it can usefully go — and a small model
+                // reads a wrong reason as a fact to act on (gear up a new hull).
+                if ($nowhereToFly) {
+                    $down['why'] = 'expansionist — nowhere reachable has work left for you (see Destinations); '
+                        . 'get back to the ground and work from there — fund a colony by invest, or gather what the missing gear needs';
+                }
+
+                return $down;
             }
 
             // In Earth orbit with a ship + fuel and an open, shielded window →
@@ -2422,7 +2538,7 @@ final class Ladder
             // TWR-rejected body with an open window (Venus) got suggested
             // right back, over and over, even from inside the dead-end-hull
             // rebuild path a few lines up.
-            if (($dest = self::departTarget($raw)) !== null) {
+            if (($dest = self::departTarget($raw, $departUnreachable)) !== null) {
                 return ['verb' => 'depart', 'args' => ['dest' => $dest], 'why' => "expansionist — {$dest} window is open and you are fuelled and shielded"];
             }
 
@@ -2529,7 +2645,7 @@ final class Ladder
             // LIGHT composite frame — 3 engines feeding 2 bearing-propellers
             // for the thrust, 3 composite wings for the lift, a chip cockpit
             // for control, an ion_thruster jet for the orbital drive.
-            if ($onGround && ! $hasShip) {
+            if ($onGround && ! $hasShip && ! $nowhereToFly) {
                 $held = self::looseParts($raw);
                 $count = static fn(string $p): int => count(array_filter($held, static fn(string $q): bool => $q === $p));
 

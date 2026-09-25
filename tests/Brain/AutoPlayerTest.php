@@ -2511,4 +2511,183 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertContains('distress', $verbs, 'a recalled agent is playing again; a held one never will be');
         self::assertNotSame('distress', $verbs[0], 'and not on the first turn');
     }
+
+    /**
+     * The live Season 8 shape of #142285 on 2026-09-25: every colony finished
+     * but Triton, which needs a thermal_core nothing makes; warp gates to six
+     * bodies; 3.5M units of body cargo in the hold. Doubles as Triton's colony
+     * board, since the test HTTP double serves one payload to every GET.
+     *
+     * @param array<string,mixed> $over
+     *
+     * @return array<string,mixed>
+     */
+    private function season8Stall(array $over = []): array
+    {
+        $d = static fn(array $gear): array => ['needs_in_hold' => $gear, 'needs_landing_gear_on_ship' => true,
+            'min_thrust_to_weight' => 0.5, 'course_correction_fuel' => 4, 'ready' => false, 'blockers' => []];
+
+        return array_replace_recursive([
+            'tick' => 1_829_360, 'downed_until' => 0, 'position' => [77, 140],
+            'in_space' => true, 'altitude' => 500,
+            'vehicles' => [['name' => 'flyer', 'flies' => true, 'orbital_engine' => true]],
+            'loose_parts' => [], 'nearby_deposits' => [],
+            'inventory' => ['credits' => 418017, 'cryo_fuel' => 580, 'heat_shield' => 1, 'acid_skin' => 1,
+                'c_regolith' => 3505412, 'crystal' => 1082, 'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5],
+            'expansion' => [
+                'at_body' => null, 'location' => 'earth',
+                'windows' => [
+                    'deimos' => ['open' => false, 'dv_need' => 50, 'opens_in' => 537],
+                    'mars' => ['open' => false, 'dv_need' => 100, 'opens_in' => 537],
+                    'triton' => ['open' => false, 'dv_need' => 320, 'opens_in' => 457],
+                ],
+                'preflight' => ['destinations' => [
+                    'deimos' => $d([]), 'mars' => $d(['heat_shield']), 'triton' => $d(['thermal_core']),
+                ]],
+                'gates' => ['linked_from_here' => ['deimos', 'mars']],
+            ],
+            // Triton's colony board — zero funders on every module.
+            'body' => 'triton', 'label' => 'Geyser Watch', 'cap_pct_per_agent' => 60, 'complete' => false,
+            'modules' => [[
+                'module' => 'geyser_mast', 'complete' => false, 'funders' => 0, 'contrib' => [],
+                'need' => ['superalloy' => 180, 'titanium' => 200, 'nitrogen_ice' => 200],
+                'remaining' => ['superalloy' => 180, 'titanium' => 200, 'nitrogen_ice' => 200],
+            ]],
+            'extractors' => [],
+        ], $over);
+    }
+
+    /** @param list<string> $bodies */
+    private function markDone(StateStore $state, int $agent, array $bodies): void
+    {
+        foreach ($bodies as $b) {
+            $state->recordColonyDone($agent, $b);
+        }
+    }
+
+    /**
+     * OUTCOME test for the stall: the model proposes `depart deimos` with the
+     * window shut and a gate that has already refused the agent's 3.5M units of
+     * body cargo. Whichever layer catches it — the expansionist outbound check,
+     * the hold, or the stance-independent gate in
+     * {@see \NHA\Brain\Ladder::departRefusal()} — it must not be filed.
+     *
+     * This does NOT isolate the new gate: in every state constructible here an
+     * older layer also stops it, and the live path that let it through could
+     * not be reconstructed (the runner's reason log is its discarded stdout).
+     * The gate's own logic is pinned by ReachabilityTest.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testADepartTheGateHasAlreadyRefusedIsNotFiledAgain(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['mars']);   // deimos still live, behind a shut window
+        $state->recordGateCargoRefusal(142285, 1_829_226);
+
+        $player = new AutoPlayer($this->nhaWith($this->season8Stall()), $this->brainReturning('{"verb":"depart","args":{"dest":"deimos"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertNotSame('depart', $this->posts[0][1]['verb'], 'the gate said no to this cargo 134 ticks ago; nothing has changed');
+    }
+
+    /**
+     * Nowhere reachable has work: every colony is done but Triton, and Triton
+     * needs gear nothing makes. The invest-from-Earth path is the one move
+     * left — and it used to fund only FINISHED colonies, because the remote
+     * board rotated through `$doneBodies` and nothing else.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testWithNowhereToGoItFundsTheColonyItCannotReach(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+
+        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0]);
+        // Route per body. The plain double serves ONE payload to every GET, so
+        // fetching a finished colony's board returned Triton's too — which
+        // made this test pass against the very bug it exists to catch.
+        $finished = static fn(string $b): array => array_replace($grounded, ['body' => $b, 'complete' => true,
+            'modules' => [['module' => 'done', 'complete' => true, 'need' => [], 'remaining' => [], 'contrib' => []]]]);
+        $nha = $this->nhaWith($grounded);
+        $http = $this->getMockBuilder(Http::class)->disableOriginalConstructor()->onlyMethods(['get', 'post'])->getMock();
+        $http->method('get')->willReturnCallback(static function ($e) use ($grounded, $finished) {
+            foreach (['deimos', 'mars'] as $b) {
+                if (str_contains((string) $e, "colony/{$b}")) {
+                    return resolve($finished($b));
+                }
+            }
+
+            return resolve($grounded);
+        });
+        $http->method('post')->willReturnCallback(function ($e, $c = null) {
+            $this->posts[] = [(string) $e, json_decode(json_encode($c), true)];
+
+            return resolve(['queued_intent' => 555, 'tick' => 42]);
+        });
+        (new \ReflectionProperty(NHA::class, 'nha_http'))->setValue($nha, $http);
+        (new \ReflectionProperty(\NHA\Repository\AbstractRepository::class, 'nha_http'))->setValue($nha->world, $http);
+
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"sell","args":{"resource":"crystal","n":20}}'), $state);
+        $player->step(142285, 'tok');
+
+        $post = $this->posts[0][1];
+        self::assertSame('invest', $post['verb'], 'the only lever left is money, from here');
+        self::assertSame('triton', $post['args']['body'], 'into the board that still needs it — not a finished one');
+    }
+
+    /**
+     * A strand counter left over from an old trip home sat at 65, past the 40
+     * that calls `distress` — so the next underfuelled return would have spent
+     * HP and jettisoned its whole haul on its very first turn.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testALeftoverStrandCounterIsClearedBackOnEarth(): void
+    {
+        $state = new StateStore($this->statePath);
+        for ($i = 0; $i < 65; ++$i) {
+            $state->countHomeHold(142285);
+        }
+
+        $player = new AutoPlayer($this->nhaWith($this->season8Stall(['in_space' => false, 'altitude' => 0])), $this->brainReturning('{"verb":"sell","args":{"resource":"crystal","n":20}}'), $state);
+        $player->step(142285, 'tok');
+
+        $raw = (array) json_decode((string) file_get_contents($this->statePath), true);
+        self::assertArrayNotHasKey('142285', (array) ($raw['agent_home_holds'] ?? []), 'a loaded gun, unloaded');
+    }
+
+    /**
+     * What the local model is actually sent. It used to get "titan OPEN" and
+     * nothing else — not the gear, not which colonies were finished, not that
+     * a gate had refused its cargo — and so it guessed, for days.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheModelIsToldWhatIsBlockingEachDestination(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordGateCargoRefusal(142285, 1_829_226);
+
+        $sent = '';
+        $brain = new AgentBrain(new OllamaClient('http://x', 'm', function ($m, $u, $h, $payload) use (&$sent) {
+            $sent = (string) $payload;
+
+            return resolve(json_encode(['message' => ['content' => '{"verb":"sell","args":{"resource":"crystal","n":20}}'], 'done' => true]));
+        }));
+        (new AutoPlayer($this->nhaWith($this->season8Stall()), $brain, $state))->step(142285, 'tok');
+
+        $messages = (array) (json_decode($sent, true)['messages'] ?? []);
+        $prompt = (string) ($messages[1]['content'] ?? '');
+        self::assertStringContainsString('Destinations', $prompt);
+        self::assertMatchesRegularExpression('/triton: .*thermal_core \(MISSING\).*has colony work/u', $prompt);
+        self::assertMatchesRegularExpression('/deimos: .*DONE — nothing to fund/u', $prompt);
+        self::assertStringContainsString('REFUSED your body cargo', $prompt);
+
+        $system = (string) ($messages[0]['content'] ?? '');
+        self::assertStringContainsString('WHEN YOU CANNOT GET THERE', $system, 'and a procedure for working the problem');
+        self::assertStringNotContainsString('"deimos"|"phobos"|"mars"|"venus"', $system, 'no stale four-body list telling it Titan is not a destination');
+    }
 }

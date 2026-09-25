@@ -131,6 +131,14 @@ final class AutoPlayer
      */
     private ?array $knownCombines = null;
 
+    /**
+     * Plain-words recipes from the codex (`/rules` `recipes[].needs`), item →
+     * text. Refreshed with {@see knownCombines()}.
+     *
+     * @var array<string,string>
+     */
+    private array $recipeNeeds = [];
+
     /** `microtime(true)` of the last successful `GET /rules`, for the TTL above. */
     private float $knownFetchedAt = 0.0;
 
@@ -194,6 +202,20 @@ final class AutoPlayer
                         $sigs[$sig] = true;
                     }
                 }
+                // The codex also states every recipe in plain words (`needs`),
+                // and this fetch used to throw that away. It is the only source
+                // for how to make the gear a destination demands — thermal_core
+                // is "a battery + mars_ice + a NON-magnetic metal", which no
+                // constant in this repo carries and which the model needs in
+                // order to plan its way to a body it cannot yet reach.
+                foreach ((array) ($rules['recipes'] ?? []) as $recipe) {
+                    $recipe = (array) $recipe;
+                    $item = (string) ($recipe['item'] ?? '');
+                    $needs = trim((string) ($recipe['needs'] ?? ''));
+                    if ($item !== '' && $needs !== '') {
+                        $this->recipeNeeds[$item] = $needs;
+                    }
+                }
 
                 $this->knownFetchedAt = microtime(true);
 
@@ -252,6 +274,17 @@ final class AutoPlayer
     public const HOME_HOLD_STRAND = 40;
 
     /**
+     * Slack on top of a hold's own window estimate before the hold is judged
+     * to have failed. Covers what a legitimate hold does besides waiting —
+     * elevator bounces to stay in the depart band, topping up fuel, crafting a
+     * shield. Not a game-balance figure: it is how long we are willing to be
+     * wrong about a wait before letting the model look at it.
+     *
+     * @since 3.14.0
+     */
+    public const HOLD_GRACE_TICKS = 300;
+
+    /**
      * A step that actually CHANGES something when a decision has been blocked
      * for want of credits or materials.
      *
@@ -299,6 +332,110 @@ final class AutoPlayer
         $n = Ladder::noop($raw, $reason);
 
         return ['verb' => $n['verb'], 'args' => $n['args'], 'reason' => $reason];
+    }
+
+    /**
+     * The engine's recent refusals of this agent's intents, newest first, one
+     * per distinct (verb, reason) — read from the profile feed that is already
+     * fetched every turn.
+     *
+     * The model needs these to persist. A rejection shown only as "last turn"
+     * is gone the moment one ordinary turn applies in between, and that is how
+     * a gate's cargo refusal was re-learned every cycle for days.
+     *
+     * @return list<array{verb:string,result:string,ago:int}>
+     *
+     * @since 3.14.0
+     */
+    private static function recentRejections(mixed $profile, int $tick, int $limit): array
+    {
+        $rows = is_object($profile) ? (array) ($profile->recent ?? []) : (array) (((array) $profile)['recent'] ?? []);
+        $out = [];
+        $seen = [];
+        foreach ($rows as $e) {
+            $e = (array) $e;
+            $d = (array) ($e['data'] ?? []);
+            if (($d['status'] ?? '') !== 'rejected') {
+                continue;
+            }
+            $verb = (string) ($d['verb'] ?? '');
+            $result = trim((string) ($d['result'] ?? ''));
+            // Numbers out of the key: the same gate refusal quotes a fresh unit
+            // count every time (3,503,740 … 3,504,488), and two copies of one
+            // lesson crowd out a different one.
+            $key = $verb . '|' . (string) preg_replace('/\d+/', '#', mb_substr($result, 0, 80));
+            if ($verb === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = ['verb' => $verb, 'result' => mb_substr($result, 0, 240), 'ago' => max(0, $tick - (int) ($e['tick'] ?? $tick))];
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Arrival gear a destination with work left demands and the agent does not
+     * hold — the things it would have to make to get anywhere new.
+     *
+     * @param array<string,mixed> $raw
+     * @param list<string>        $colonyDone
+     *
+     * @return list<string>
+     *
+     * @since 3.14.0
+     */
+    private static function gearGaps(array $raw, array $colonyDone): array
+    {
+        $inv = (array) ($raw['inventory'] ?? []);
+        $gaps = [];
+        foreach (Bodies::all($raw) as $body => $b) {
+            if (in_array($body, $colonyDone, true)) {
+                continue;
+            }
+            foreach ($b['needs_in_hold'] as $item) {
+                if ((int) ($inv[$item] ?? 0) < 1) {
+                    $gaps[$item] = true;
+                }
+            }
+        }
+
+        return array_keys($gaps);
+    }
+
+    /**
+     * The codex's own plain-words recipe for each item, plus one level of the
+     * sub-recipes those name — `thermal_core` says "a battery + mars_ice + …",
+     * and a model that cannot make a battery cannot use that answer.
+     *
+     * @param list<string> $items
+     *
+     * @return array<string,string> item → recipe text
+     *
+     * @since 3.14.0
+     */
+    private function recipesFor(array $items): array
+    {
+        $out = [];
+        $second = [];
+        foreach ($items as $item) {
+            if (! isset($this->recipeNeeds[$item])) {
+                continue;
+            }
+            $out[$item] = $this->recipeNeeds[$item];
+            foreach (array_keys($this->recipeNeeds) as $other) {
+                if (! isset($out[$other]) && $other !== $item
+                    && preg_match('/\b' . preg_quote((string) $other, '/') . '\b/i', $this->recipeNeeds[$item])
+                ) {
+                    $second[$other] = $this->recipeNeeds[$other];
+                }
+            }
+        }
+
+        return array_slice($out + $second, 0, 6, true);
     }
 
     /** Normalises a comma-separated ingredient list to the sorted `a+b` signature. */
@@ -1017,11 +1154,36 @@ final class AutoPlayer
                 }
                 break;
             }
+            // A warp gate that refused our body cargo will refuse it again until
+            // the haul changes. The engine says so in plain words and offers the
+            // way out ("…fly it the long way"), so the rejection is the teacher:
+            // remember it, stamped with the tick the engine actually said no,
+            // and let {@see Ladder::departRefusal()} stop the next closed-window
+            // attempt before it is filed. Newest refusal wins.
+            $gateRefusedAt = 0;
+            foreach ((array) (is_object($pre['profile'] ?? null) ? ($pre['profile']->recent ?? []) : []) as $e) {
+                $e = (array) $e;
+                $d = (array) ($e['data'] ?? []);
+                if ('depart' === ($d['verb'] ?? '') && 'rejected' === ($d['status'] ?? '')
+                    && str_contains(strtolower((string) ($d['result'] ?? '')), 'warp gate carries body cargo')
+                ) {
+                    $gateRefusedAt = max($gateRefusedAt, (int) ($e['tick'] ?? 0));
+                }
+            }
+            if ($gateRefusedAt > $this->state->gateCargoRefusedAt($agent_id)) {
+                $this->state->recordGateCargoRefusal($agent_id, $gateRefusedAt);
+            }
             if (($goal = $this->state->fuelGoal($agent_id)) > 0) {
                 $rawObs['_fuel_goal'] = $goal;
             }
             if (($wants = $this->state->boardWants($agent_id)) !== []) {
                 $rawObs['_board_wants'] = $wants;
+            }
+            // Colony-done on its OWN, separate from the merged depart skip list,
+            // so the ladder can tell "the hull cannot get there" (rebuild it)
+            // from "there is nothing there for us" (a new hull changes nothing).
+            if (($doneForLadder = $this->state->colonyDoneBodies($agent_id)) !== []) {
+                $rawObs['_colony_done'] = $doneForLadder;
             }
             // What the Guild referee has already told this agent, in its own
             // recorded words. Every filing costs 50 credits and four in five
@@ -1084,9 +1246,31 @@ final class AutoPlayer
             });
 
             $doneBodies = $this->state->colonyDoneBodies($agent_id);
-            $remoteBody = $homeBody === null && $doneBodies !== []
-                ? (string) $doneBodies[$tick % count($doneBodies)]
+            // The remote board is the one the agent works from Earth — funding
+            // it with credits, calling for help on it. It used to rotate through
+            // `$doneBodies` ONLY, i.e. colonies this agent has already finished,
+            // which by definition have nothing left to fund; the one board that
+            // did (Triton, zero funders on all three modules) was never looked
+            // at, because it was not done and not flyable either. Prefer a body
+            // with work left that the agent cannot reach — that is precisely
+            // what money from Earth is for — and fall back to the old rotation.
+            $stranded = array_values(array_diff(
+                Bodies::names($rawObs),
+                $doneBodies,
+                Ladder::liveDestinations($doneBodies, $rawObs),
+            ));
+            $remotePool = $stranded !== [] ? $stranded : $doneBodies;
+            $remoteBody = $homeBody === null && $remotePool !== []
+                ? (string) $remotePool[$tick % count($remotePool)]
                 : null;
+            // The strand counter only means anything while the agent is at a
+            // body, or on its way back from one. Left over from an old trip it
+            // is a loaded gun: live it sat at 65, past the 40 that calls
+            // `distress`, so the next underfuelled trip home would have spent
+            // HP and jettisoned its whole haul on its very first turn.
+            if ($homeBody === null) {
+                $this->state->clearHomeHolds($agent_id);
+            }
             $boardBody = $homeBody ?? $remoteBody;
             $colonyBoardPromise = $boardBody !== null
                 ? $this->nha->world->getColony((string) $boardBody)->then(
@@ -1210,9 +1394,36 @@ final class AutoPlayer
             $this->state->setStance($agent_id, $stance, $tick);
 
             $holdingForWindow = ! $shipStranded && ! $inTransit && (
-                Ladder::isHoldingForWindow($rawObs, $stance, $departUnreachable)
+                // The FULL skip list: a finished colony is not worth waiting
+                // for a window to, and the hull-rejections-only list counted
+                // Deimos — done for weeks — as a reason to keep holding.
+                Ladder::isHoldingForWindow($rawObs, $stance, $departSelectSkip)
                 || ($departCooldown && ($rawObs['in_space'] ?? false) && Ladder::hasOrbitalShip($rawObs))
             );
+            // The hold switches the loop guard off, and the loop guard is the
+            // road to handing the model the objective board. So the hold must
+            // never be able to do that indefinitely. It is bounded by its OWN
+            // estimate — the soonest window among destinations worth reaching,
+            // read at the moment it began — plus a grace for station-keeping
+            // bounces and topping up. Past that, the window came and went and
+            // the agent is still here: the hold failed, and a stall the code has
+            // no rung for gets to reach the model after all.
+            $holdOverrun = 0;
+            if ($holdingForWindow) {
+                $soonest = null;
+                foreach (Bodies::all($rawObs) as $b => $w) {
+                    if (in_array($b, Ladder::liveDestinations($departSelectSkip, $rawObs), true)) {
+                        $soonest = min($soonest ?? PHP_INT_MAX, $w['open'] ? 0 : $w['opens_in']);
+                    }
+                }
+                $hold = $this->state->holdStarted($agent_id, $tick, (int) ($soonest ?? 0));
+                if (($held = $tick - $hold['tick']) > $hold['expect'] + self::HOLD_GRACE_TICKS) {
+                    $holdingForWindow = false;
+                    $holdOverrun = $held;
+                }
+            } else {
+                $this->state->clearHoldStarted($agent_id);
+            }
             $loopRaw = self::detectLoop($recent);
             // A dead-end hull ({@see Ladder::hasDepartCapableShip()}) is driven
             // through a fixed ~15-turn rebuild (descend → craft/build the
@@ -1254,6 +1465,32 @@ final class AutoPlayer
             $context['known_combines'] = array_keys($known);
             $context['tried_combines'] = $tried;
             $context['dead_combines'] = $dead;
+
+            // WHAT THE MODEL NEEDS TO SOLVE TRAVEL FOR ITSELF. It used to be
+            // told "titan OPEN" and nothing else — not that Titan needs a
+            // thermal_core it lacks, not that Deimos was finished weeks ago, not
+            // that a gate had refused its cargo, and not how any missing gear is
+            // made. So it proposed `depart deimos` into the same gate refusal
+            // for days. Everything below comes from the world (the observation,
+            // the codex, the engine's own rejection text) — the brain supplies
+            // the bookkeeping, not the rules.
+            $colonyDoneNow = $this->state->colonyDoneBodies($agent_id);
+            $context['stance'] = $stance;
+            $context['depart_skip'] = $departSelectSkip;
+            $context['colony_done'] = $colonyDoneNow;
+            $context['hints'] = array_intersect_key(
+                $rawObs,
+                array_flip(['_colony_done', '_fuel_goal', '_board_wants', '_combine_lore']),
+            );
+            $context['gate_refuses_cargo'] = $this->state->gateRefusesCargo($agent_id, $tick);
+            // A rejection used to be shown for exactly ONE turn — and a single
+            // applied hold turn afterwards pushed it out of the model's view, so
+            // the gate refusal was forgotten and re-earned every cycle.
+            $context['rejections'] = self::recentRejections($pre['profile'] ?? null, $tick, 5);
+            $context['recipes'] = $this->recipesFor(self::gearGaps($rawObs, $colonyDoneNow));
+            if ($holdOverrun > 0) {
+                $context['hold_overrun'] = $holdOverrun;
+            }
             // Durable "this was refused, here's the class of reason" verdicts
             // learned from the world's activity feed ({@see reviewCapabilityFeed()}).
             $blockedCapabilities = $this->state->capabilities($agent_id);
@@ -2197,6 +2434,33 @@ final class AutoPlayer
                             $decision['args']['n'] = $held;
                             $decision['reason'] = (string) ($decision['reason'] ?? '') . " (sized {$want}→{$held} to what is held)";
                         }
+                    }
+                }
+
+                // `depart` — the last refusable verb with no gate of its own.
+                // The orbital hold waves a model-proposed depart through, since
+                // a depart is normally what the hold is waiting for; so the
+                // model's `depart deimos` (a colony finished weeks ago, window
+                // shut 537 ticks) went straight to the Earth↔Deimos gate, which
+                // refused it for carrying 3.5M units of body cargo. Nothing
+                // changed, so it came back, for days. Judge it here like every
+                // other verb, and spend the turn on something that moves.
+                if (($decision['verb'] ?? '') === 'depart') {
+                    $dest = (string) ($decision['args']['dest'] ?? '');
+                    $why = Ladder::departRefusal($rawObs, $dest, $departUnreachable, $this->state->gateRefusesCargo($agent_id, $tick));
+                    if ($why !== null) {
+                        $decision = $this->earnStep(
+                            $rawObs,
+                            (array) $observation->getInventory(),
+                            "not departing — {$why}",
+                            $tried,
+                            $known,
+                            $stance,
+                            $departSelectSkip,
+                            $this->state->boardWants($agent_id),
+                            'depart',
+                        );
+                        $verb = (string) $decision['verb'];
                     }
                 }
 

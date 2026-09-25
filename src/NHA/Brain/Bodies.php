@@ -196,6 +196,92 @@ final class Bodies
     }
 
     /**
+     * Arrival gear this brain has a crafting path for.
+     *
+     * Deliberately a statement about THIS CODE, not about the game — it lists
+     * what {@see Ladder} has rungs to produce, and it is the one table here that
+     * should be hand-maintained. `thermal_core` is absent because its recipe
+     * (a battery + `mars_ice` + a non-magnetic metal) needs a body resource
+     * hauled from Mars, and no rung plans that trip. Add a gear item here in the
+     * same change that adds the rung that makes it.
+     *
+     * @since 3.14.0
+     */
+    public const CRAFTABLE_GEAR = ['heat_shield', 'acid_skin'];
+
+    /**
+     * Whether the agent could ever equip for this destination: every item its
+     * arrival consumes is either already in hand or something the ladder knows
+     * how to make.
+     *
+     * The distinction this draws is between a destination that is merely
+     * *waiting* (the window is shut) and one that is *blocked* (the gear will
+     * never appear). Treating the second as the first is a dead end with a
+     * patient face: live, #142285 sat in Earth orbit for days "holding for a
+     * transfer window to open" for Triton — the one body with colony work left
+     * — whose window was never the obstacle, because nothing was ever going to
+     * produce the `thermal_core` it needs.
+     *
+     * @param array<string,mixed> $raw
+     *
+     * @since 3.14.0
+     */
+    public static function reachable(array $raw, string $body): bool
+    {
+        $b = self::all($raw)[$body] ?? null;
+        if ($b === null) {
+            return false;
+        }
+        $inv = (array) ($raw['inventory'] ?? []);
+        foreach ($b['needs_in_hold'] as $item) {
+            if ((int) ($inv[$item] ?? 0) < 1 && ! in_array($item, self::CRAFTABLE_GEAR, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The gear standing between the agent and a destination that it cannot
+     * make — empty when the body is {@see reachable()}.
+     *
+     * @param array<string,mixed> $raw
+     *
+     * @return list<string>
+     *
+     * @since 3.14.0
+     */
+    public static function missingGear(array $raw, string $body): array
+    {
+        $inv = (array) ($raw['inventory'] ?? []);
+
+        return array_values(array_filter(
+            (array) ((self::all($raw)[$body] ?? [])['needs_in_hold'] ?? []),
+            static fn(string $item): bool => (int) ($inv[$item] ?? 0) < 1 && ! in_array($item, self::CRAFTABLE_GEAR, true),
+        ));
+    }
+
+    /**
+     * Whether a live warp-gate pair joins Earth to this body.
+     *
+     * A pair lets `depart` ignore the launch window and costs a fifth of the
+     * Δv — but it carries exotic body cargo ONLY in single-use `warp_container`
+     * crates, so for an agent hauling a body's worth of regolith the gate is a
+     * wall, not a shortcut. Read from `expansion.gates.linked_from_here`.
+     *
+     * @param array<string,mixed> $raw
+     *
+     * @since 3.14.0
+     */
+    public static function gateLinked(array $raw, string $body): bool
+    {
+        $gates = (array) (((array) ($raw['expansion'] ?? []))['gates'] ?? []);
+
+        return in_array($body, array_map('strval', (array) ($gates['linked_from_here'] ?? [])), true);
+    }
+
+    /**
      * The engine's own verdict on a destination, when it has published one.
      * `null` means it said nothing — not that the answer is no.
      *
