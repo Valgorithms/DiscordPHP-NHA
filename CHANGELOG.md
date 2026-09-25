@@ -6,6 +6,35 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-09-25
+
+### Added
+- **The model is told when our own gates block its pick.** The engine's
+  refusals reached it through the activity feed; our gates' never did. Live, it
+  proposed `finalize` 161 times in 8 hours and was blocked 142 times for "no
+  cockpit" without being told, and kept giving "build the flyer" as its reason
+  while those builds were swapped out. A replaced pick is now stored
+  (`recordVeto()`, one row per distinct proposal, counted) and shown for 600
+  ticks under "BLOCKED before reaching the game". The "Last turn" line now says
+  "you proposed X, but a safety check replaced it with Y" instead of crediting
+  Y to the model.
+- **Every turn records who decided it.** `AutoPlayer::lastTurn()` returns the
+  turn's `source` (`model`, `adjusted`, `override`, `loop`, `ladder` or
+  `defence`), the model's original pick when it was replaced, and how long the
+  model took (`AgentBrain::lastLatencyMs()`). `autoplay.php` logs it as each
+  line's JSON context, and `recordDecision()` stores `source` and `proposed`.
+  Measuring the model's share used to mean guessing from how each reason was
+  worded.
+
+### Fixed
+- **The loop breaker's `wealth` turn sold while rich.** With 440k credits it
+  still sold 20 crystal at the depot, the liquidation 3.14.3 stopped in the
+  shared fallback. It now sells only below `CREDIT_FLOOR`, never a protected
+  stockpile line, and otherwise falls through to harvesting or relocating.
+- **"Last turn's X was rejected" never appeared in the status line.** The
+  closure that builds it did not capture `$pre` or `$last`, and `??` hid both
+  undefined variables, so the line was always empty.
+
 ## [3.14.4] - 2026-09-25
 
 ### Fixed

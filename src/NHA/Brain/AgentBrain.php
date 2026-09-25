@@ -44,10 +44,25 @@ final class AgentBrain
      */
     public const VERBS = Playbook::VERBS;
 
+    /** How long the last {@see decide()} waited on the model, in ms; null before the first reply. */
+    private ?int $lastLatencyMs = null;
+
     /**
      * @param OllamaClient $ollama The LLM client prompted for each decision.
      */
     public function __construct(private readonly OllamaClient $ollama) {}
+
+    /**
+     * How long the most recent {@see decide()} call waited on the model, in
+     * milliseconds — for the per-turn record {@see AutoPlayer::lastTurn()}
+     * logs. Null until a reply has arrived.
+     *
+     * @since 3.15.0
+     */
+    public function lastLatencyMs(): ?int
+    {
+        return $this->lastLatencyMs;
+    }
 
     /**
      * Asks the model for the next action.
@@ -66,7 +81,13 @@ final class AgentBrain
             ['role' => 'user', 'content' => $this->summarize($observation, $lastDecision)],
         ];
 
-        return $this->ollama->chat($messages)->then(static fn(string $content) => self::parseDecision($content));
+        $asked = hrtime(true);
+
+        return $this->ollama->chat($messages)->then(function (string $content) use ($asked): ?array {
+            $this->lastLatencyMs = intdiv(hrtime(true) - $asked, 1_000_000);
+
+            return self::parseDecision($content);
+        });
     }
 
     /**

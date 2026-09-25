@@ -29,12 +29,31 @@ trait DecisionLogTrait
     private const DECISION_LOG_CAP = 24;
 
     /**
+     * How long a proposal our own gates blocked stays in the model's view.
+     * Matches the gate-cargo refusal window: long enough to outlast a run of
+     * ordinary turns in between, short enough that a changed situation (a
+     * cockpit finally built) is not argued against forever.
+     *
+     * @since 3.15.0
+     */
+    private const VETO_MEMORY_TICKS = 600;
+
+    /** How many distinct blocked proposals are remembered per agent. */
+    private const VETO_CAP = 6;
+
+    /**
      * Records the brain's most recent decision for an agent (verb, args, the
      * one-line rationale and the `queued_intent` id it produced), so a later
      * command can show "what did the bot last do, and did it land?".
      *
+     * `source` says who picked the verb ({@see \NHA\Brain\AutoPlayer::lastTurn()}):
+     * `model`, `adjusted`, `override`, `loop` or `ladder`. When it is not the
+     * model's own pick, `proposed` keeps what the model asked for, so the next
+     * prompt can say "you proposed X; it was replaced" instead of "you chose Y".
+     *
      * @param int                  $agent_id
-     * @param array<string, mixed> $decision Expects keys: verb, args, reason, queued_intent, tick.
+     * @param array<string, mixed> $decision Expects keys: verb, args, reason, queued_intent, tick;
+     *                                       optionally source and proposed.
      */
     public function recordDecision(int $agent_id, array $decision): void
     {
@@ -47,6 +66,15 @@ trait DecisionLogTrait
             'alt' => isset($decision['alt']) ? (int) $decision['alt'] : null,
             'at' => time(),
         ];
+        if (isset($decision['source'])) {
+            $entry['source'] = (string) $decision['source'];
+        }
+        if (is_array($decision['proposed'] ?? null)) {
+            $entry['proposed'] = [
+                'verb' => (string) ($decision['proposed']['verb'] ?? ''),
+                'args' => (array) ($decision['proposed']['args'] ?? []),
+            ];
+        }
 
         $this->data['agent_decisions'][(string) $agent_id] = $entry;
 
@@ -90,7 +118,7 @@ trait DecisionLogTrait
     /**
      * Gets the brain's last recorded decision for an agent, if any.
      *
-     * @return array{verb: string, args: array, reason: string, queued_intent: ?int, tick: ?int, at: int}|null
+     * @return array{verb: string, args: array, reason: string, queued_intent: ?int, tick: ?int, at: int, source?: string, proposed?: array{verb: string, args: array}}|null
      */
     public function getLastDecision(int $agent_id): ?array
     {
@@ -106,7 +134,89 @@ trait DecisionLogTrait
             'queued_intent' => isset($entry['queued_intent']) ? (int) $entry['queued_intent'] : null,
             'tick' => isset($entry['tick']) ? (int) $entry['tick'] : null,
             'at' => (int) ($entry['at'] ?? 0),
+        ] + array_intersect_key($entry, ['source' => true, 'proposed' => true]);
+    }
+
+    /**
+     * Records a proposal of the model's that one of our own gates replaced
+     * before it reached the engine.
+     *
+     * The engine's refusals reach the model through the activity feed; our
+     * gates' never reached it at all. Live, it proposed `finalize` 161 times in
+     * 8 hours and was blocked 142 times for "no cockpit" without ever being
+     * told, so it asked again the next turn. One entry per distinct proposal,
+     * counted, newest reason kept.
+     *
+     * @param array<string, mixed> $args
+     * @param string               $why  The replacement's reason: the gate's lead and what was done instead.
+     *
+     * @since 3.15.0
+     */
+    public function recordVeto(int $agent_id, string $verb, array $args, string $why, int $tick): void
+    {
+        if ($verb === '') {
+            return;
+        }
+        $key = $verb . ' ' . json_encode(self::sortedArgs($args), JSON_UNESCAPED_SLASHES);
+        $vetoes = (array) ($this->data['agent_vetoes'][(string) $agent_id] ?? []);
+        $prior = is_array($vetoes[$key] ?? null) ? $vetoes[$key] : [];
+        // Re-inserted at the end, so the array stays oldest-first.
+        unset($vetoes[$key]);
+        $vetoes[$key] = [
+            'verb' => $verb,
+            'args' => $args,
+            'why' => mb_substr($why, 0, 240),
+            'tick' => $tick,
+            'count' => (int) ($prior['count'] ?? 0) + 1,
         ];
+        $this->data['agent_vetoes'][(string) $agent_id] = array_slice($vetoes, -self::VETO_CAP, null, true);
+        $this->save();
+    }
+
+    /**
+     * The model's proposals our gates blocked recently, newest first.
+     *
+     * @return list<array{verb: string, args: array, why: string, ago: int, count: int}>
+     *
+     * @since 3.15.0
+     */
+    public function recentVetoes(int $agent_id, int $tick, int $limit = 4): array
+    {
+        $out = [];
+        foreach (array_reverse((array) ($this->data['agent_vetoes'][(string) $agent_id] ?? [])) as $v) {
+            if (! is_array($v) || ! isset($v['verb'])) {
+                continue;
+            }
+            $ago = max(0, $tick - (int) ($v['tick'] ?? 0));
+            if ($ago >= self::VETO_MEMORY_TICKS) {
+                continue;
+            }
+            $out[] = [
+                'verb' => (string) $v['verb'],
+                'args' => (array) ($v['args'] ?? []),
+                'why' => (string) ($v['why'] ?? ''),
+                'ago' => $ago,
+                'count' => (int) ($v['count'] ?? 1),
+            ];
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /** Args with their keys sorted, recursively, so `{a,b}` and `{b,a}` are one proposal. */
+    private static function sortedArgs(array $args): array
+    {
+        ksort($args);
+        foreach ($args as $k => $v) {
+            if (is_array($v)) {
+                $args[$k] = self::sortedArgs($v);
+            }
+        }
+
+        return $args;
     }
 
     /**

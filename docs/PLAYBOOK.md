@@ -42,7 +42,7 @@ flowchart TD
     downed -- no --> stance["Stance::pick &#8594; aggressive &#40;defend&#41; / quartermaster &#8594; researcher &#8594; expansionist<br/>&#40;the resupply chain, then the mission; persisted&#41;"]
     stance --> combat{Ladder::defensiveAction<br/>&#40;recent attack / robber / hostile closing while hurt&#41;?}
     combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#8594; submit &amp; record, skip the brain entirely"]]
-    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets"]
+    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;"]
     ctx --> detect["detectLoop recent<br/>&#40;a 'stuck land/launch' bypasses the cooldown&#41;"]
     detect --> isloop{loop found &amp;<br/>not in cooldown?}
     isloop -- yes --> peek["state.peekNextForcedObjective<br/>&#40;name it for the prompt; do NOT commit yet&#41;"]
@@ -71,7 +71,8 @@ flowchart TD
     g2 -- no --> exp
     exp{"&#40;expansionist flight guardrails&#41;<br/>dead-end hull &#40;deimos + phobos + mars each depart-rejected OR already colony-done&#41; &#8594; gear a fresh flyer;<br/>on the ground w/ a depart-capable ship &#8594; force toward orbit;<br/>in orbit &amp; a window we can service is open &amp; no retry cooldown &#8594; force depart;<br/>a depart to any other dest &#40;model or ladder&#41; &#8594; force the deterministic hold;<br/>hold = station-keep: alt &lt; 300 &amp; ride cooldown elapsed &#8594; bounce the elevator back to the band &#40;no fuel, arms a 12-tick cooldown&#41;, else stock fuel/shield &#8594; dock &#8594; idle;<br/>body-surface construct the feed shows refused for materials &#8594; Ladder::bodyBuildStep &#40;buy the short depot raw / combine chips&#41;, or rewrite a bad `kind` arg;<br/>colony board has an incomplete module &#8594; Ladder::colonyFundStep &#40;hold a needed material &#8594; construct shape=colony, else Ladder::acquire it — mine a nearby deposit / dock an asteroid before buying&#41;; colony share funded &#8594; a construct extractor past the cap OR a construct shape=colony with a module not open on the board is dropped &#8594; hand off to the flight ladder &#40;ride / depart home&#41;"}
     exp --> rec
-    rec[if final verb == combine:<br/>state.recordCombineSignature] --> submit[NHA::intentWithToken<br/>state.recordDecision &#40;with altitude&#41;]
+    rec[if final verb == combine:<br/>state.recordCombineSignature] --> src["turnSource: model / adjusted / override / loop / ladder<br/>override &#8594; state.recordVeto the model's pick"]
+    src --> submit[NHA::intentWithToken<br/>state.recordDecision &#40;with altitude, source, proposed&#41;]
     submit --> done([&#129302; &#91;stance&#93; / &#128737;&#65039; / &#9851;&#65039; / &#128260; status line])
 ```
 
@@ -91,6 +92,17 @@ ones: `needs_part` / `capability` (a hull limit — cleared on the next
 `needs_enum` (a bad enum arg — sticky for the run). A `depart:<body>` verdict
 merges into `departUnreachable`, so the flight guardrails stop holding for — and
 stop retrying — a hop the ship cannot make.
+
+**Veto memory** (`AutoPlayer::lastTurn()` + [`DecisionLogTrait`](../src/NHA/State/DecisionLogTrait.php)).
+The ledger above only sees what the engine refused. When one of our own gates
+replaces the model's pick, the engine never sees the proposal, so the feed never
+carries it. `turnSource()` compares the submission with the model's own pick; an
+`override` is stored by `recordVeto()` (one row per distinct proposal, counted)
+and shown in the next prompts under "BLOCKED before reaching the game" for 600
+ticks. The "Last turn" line says "you proposed X, but a safety check replaced it
+with Y" instead of crediting Y to the model. The runner logs each turn's record
+(`tick`, `source`, `verb`, `proposed`, `latency_ms`) as the log line's JSON
+context.
 
 **Colony board** (`GET /colony/{body}` + `Ladder::colonyFundStep()`). On a body
 surface the mission is to finish that body's co-op colony. The board carries

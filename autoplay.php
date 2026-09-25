@@ -200,7 +200,10 @@ $turn = function () use (&$busy, &$stopping, $player, $brain, $nha, $agentId, $t
             : $player->step($agentId, $token, $leaseHolder, (int) $interval);
 
         $promise->then(
-            static fn(string $line) => $logger->info($line),
+            // The turn's record rides along as the log line's JSON context —
+            // `{"tick":…,"source":"override","proposed":{…},"latency_ms":…}` —
+            // so who decided each turn can be counted instead of guessed.
+            static fn(string $line) => $logger->info($line, $player->lastTurn($agentId)),
             static fn(\Throwable $e) => $logger->warning("turn failed: {$e->getMessage()}"),
         )->finally($done);
     } catch (\Throwable $e) {

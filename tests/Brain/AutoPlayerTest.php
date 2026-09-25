@@ -2809,4 +2809,120 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertStringContainsString('WHEN YOU CANNOT GET THERE', $system, 'and a procedure for working the problem');
         self::assertStringNotContainsString('"deimos"|"phobos"|"mars"|"venus"', $system, 'no stale four-body list telling it Titan is not a destination');
     }
+
+    /**
+     * Live on 3.14.4: "loop broken → wealth: sell surplus crystal for credits"
+     * with 440k credits in hand. The liquidation 3.14.3 stopped in the shared
+     * fallback was still alive in the loop breaker's own branch.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheLoopBreakersWealthTurnSellsOnlyWhenShortOfCash(): void
+    {
+        $turn = function (int $credits): array {
+            @unlink($this->statePath);
+            $this->posts = [];
+            $state = new StateStore($this->statePath);
+            $state->bumpForcedObjective(142287, 1); // the next forced objective is `wealth`
+            for ($i = 1; $i <= 8; $i++) {
+                $state->recordDecision(142287, ['verb' => 'chop', 'args' => ['n' => 1], 'reason' => '', 'queued_intent' => null, 'tick' => $i]);
+            }
+            $nha = $this->nhaWith(['tick' => 200, 'downed_until' => 0, 'position' => [40, 40],
+                'inventory' => ['credits' => $credits, 'crystal' => 1082, 'wood' => 25]]);
+            $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"chop","args":{"n":1}}'), $state);
+            $player->step(142287, 'tok');
+
+            self::assertSame('wealth', $state->getForcedObjective(142287, 200));
+            self::assertSame('loop', $player->lastTurn(142287)['source']);
+
+            return $this->posts[0][1];
+        };
+
+        self::assertNotSame('sell', $turn(440_000)['verb'], 'rich: there is nothing to raise cash for');
+        self::assertSame('sell', $turn(40)['verb'], 'broke: the sale still happens');
+    }
+
+    /**
+     * The model proposed `finalize` 161 times in 8 hours and our own gate
+     * blocked it 142 times without ever saying so. The next prompt even read
+     * "you chose combine", crediting the swap to the model.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     * @covers \NHA\Brain\PromptBuilder::build
+     */
+    public function testABlockedProposalIsShownToTheModelNextTurn(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $oneFrame = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false, 'loose_parts' => ['frame']]);
+
+        $sent = [];
+        $brain = new AgentBrain(new OllamaClient('http://x', 'm', function ($m, $u, $h, $payload) use (&$sent) {
+            $sent[] = (string) (json_decode((string) $payload, true)['messages'][1]['content'] ?? '');
+
+            return resolve(json_encode(['message' => ['content' => '{"verb":"finalize","args":{}}'], 'done' => true]));
+        }));
+        $player = new AutoPlayer($this->nhaWith($oneFrame), $brain, $state);
+
+        $player->step(142285, 'tok');
+        $instead = (string) $this->posts[0][1]['verb'];
+        self::assertNotSame('finalize', $instead, 'blocked, as before');
+        self::assertSame('override', $player->lastTurn(142285)['source']);
+        self::assertSame(['verb' => 'finalize', 'args' => []], $player->lastTurn(142285)['proposed']);
+        self::assertStringNotContainsString('BLOCKED before reaching the game', $sent[0]);
+
+        $player->step(142285, 'tok');
+        self::assertMatchesRegularExpression('/BLOCKED before reaching the game.*\n  finalize, 0 ticks ago: "not finalizing — no cockpit/u', $sent[1]);
+        self::assertStringContainsString("Last turn: you proposed finalize, but a safety check replaced it with {$instead}", $sent[1]);
+    }
+
+    /**
+     * @covers \NHA\Brain\AutoPlayer::lastTurn
+     */
+    public function testEachTurnSaysWhoDecidedIt(): void
+    {
+        $state = new StateStore($this->statePath);
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+            $this->brainReturning('{"verb":"mine","args":{"n":2},"reason":"wood here"}'),
+            $state,
+        );
+
+        $player->step(142287, 'tok');
+        $turn = $player->lastTurn(142287);
+        self::assertSame('model', $turn['source']);
+        self::assertSame('mine', $turn['verb']);
+        self::assertArrayNotHasKey('proposed', $turn);
+        self::assertIsInt($turn['latency_ms']);
+        self::assertSame('model', $state->getLastDecision(142287)['source']);
+
+        // A turn skipped for another driver's lease submits nothing, and must
+        // not be logged with the previous turn's record.
+        $state->acquireAutoplayLease('other-driver', 15);
+        $player->step(142287, 'tok', 'this-driver', 15);
+        self::assertSame([], $player->lastTurn(142287));
+    }
+
+    /**
+     * The status line's "last turn's X was rejected" never appeared: the
+     * closure that builds it did not capture `$pre` or `$last`, and `??`
+     * turned both undefined variables into an empty line.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testARejectedLastTurnIsReportedInTheStatusLine(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordDecision(142287, ['verb' => 'mine', 'args' => ['n' => 5], 'reason' => '', 'queued_intent' => 999, 'tick' => 1]);
+        $nha = $this->nhaWith(['tick' => 5, 'downed_until' => 0, 'position' => [1, 1], 'inventory' => ['wood' => 40],
+            'status' => 'rejected', 'result' => 'nothing to mine here']);
+
+        $line = '';
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"chop","args":{"n":1}}'), $state))->step(142287, 'tok')
+            ->then(function (string $l) use (&$line): void {
+                $line = $l;
+            });
+
+        self::assertStringContainsString("last turn's `mine` was rejected: nothing to mine here", $line);
+    }
 }

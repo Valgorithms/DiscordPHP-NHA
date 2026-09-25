@@ -268,12 +268,22 @@ final class PromptBuilder
             // like "I have 9 wood" that landed in one turn's reason would
             // otherwise be replayed verbatim every subsequent turn and read as
             // fact, even after the real inventory (below) has moved on.
-            $lines[] = sprintf(
-                'Last turn: you chose %s%s. %s',
-                $lastVerb,
-                $lastArgs === [] ? '' : ' ' . json_encode($lastArgs, JSON_UNESCAPED_SLASHES),
-                $tail,
-            );
+            // "You chose combine" was a lie on every overridden turn: the
+            // model had proposed `finalize`, a gate swapped it, and the prompt
+            // credited the swap to the model — which then proposed finalize
+            // again, never knowing it had been stopped.
+            $proposed = is_array($lastDecision['proposed'] ?? null) ? $lastDecision['proposed'] : null;
+            $did = $lastVerb . ($lastArgs === [] ? '' : ' ' . json_encode($lastArgs, JSON_UNESCAPED_SLASHES));
+            $lines[] = $proposed !== null && ($proposed['verb'] ?? '') !== ''
+                ? sprintf(
+                    'Last turn: you proposed %s%s, but %s replaced it with %s. %s',
+                    (string) $proposed['verb'],
+                    (array) ($proposed['args'] ?? []) === [] ? '' : ' ' . json_encode($proposed['args'], JSON_UNESCAPED_SLASHES),
+                    ($lastDecision['source'] ?? '') === 'loop' ? 'the loop breaker' : 'a safety check',
+                    $did,
+                    $tail,
+                )
+                : sprintf('Last turn: you chose %s. %s', $did, $tail);
         }
 
         // The engine's recent refusals, in its own words, across turns — not
@@ -284,6 +294,26 @@ final class PromptBuilder
             $lines[] = 'Recent REJECTIONS (the engine\'s own reasons — do not repeat one unless the reason no longer applies):';
             foreach ($rejections as $r) {
                 $lines[] = sprintf('  %s, %d ticks ago: "%s"', (string) ($r['verb'] ?? '?'), (int) ($r['ago'] ?? 0), (string) ($r['result'] ?? ''));
+            }
+        }
+
+        // Our own gates' refusals. They never reach the engine, so the feed
+        // above never carries them; without this block a blocked proposal was
+        // indistinguishable from one that had never been made.
+        $vetoes = array_filter((array) ($lastDecision['vetoes'] ?? []), 'is_array');
+        if ($vetoes !== []) {
+            $lines[] = 'BLOCKED before reaching the game (your proposal was replaced — do not propose it again unless the reason no longer applies):';
+            foreach ($vetoes as $v) {
+                $args = (array) ($v['args'] ?? []);
+                $count = (int) ($v['count'] ?? 1);
+                $lines[] = sprintf(
+                    '  %s%s, %d ticks ago%s: "%s"',
+                    (string) ($v['verb'] ?? '?'),
+                    $args === [] ? '' : ' ' . json_encode($args, JSON_UNESCAPED_SLASHES),
+                    (int) ($v['ago'] ?? 0),
+                    $count > 1 ? " (blocked {$count} times)" : '',
+                    (string) ($v['why'] ?? ''),
+                );
             }
         }
 

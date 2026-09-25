@@ -696,28 +696,6 @@ final class AutoPlayer
     }
 
     /**
-     * The move for when the brain's pick is a dead end — a spent research
-     * `combine`, or riding the elevator in circles. Runs the shared ladder
-     * ({@see Ladder::suggestion()}) with the entire tried + world-known
-     * combine space marked exhausted.
-     *
-     * If `inventor_points` rose recently the ladder may offer a *fresh* (untried,
-     * uninvented) pair — research is still paying, so that is allowed through.
-     * Otherwise it drops to infrastructure — `finalize` loose parts, `land` when
-     * there is nothing to do off the ground, `construct` when `composite` +
-     * `metal` are in hand, else sell a surplus, harvest a shortage, or move
-     * toward the materials a build needs. Returns `null` only when the ladder
-     * has nothing either.
-     *
-     * @param string              $reasonLead     Prefix for the decision reason (why the brain's pick was dropped).
-     * @param list<string>        $tried          Combine signatures already submitted this run.
-     * @param array<string, bool> $known          `a+b => true` for world-known sets.
-     * @param bool                $researchPaying Whether inventor points rose recently — if so a fresh
-     *                                            pair is still worth a shot, otherwise go to infrastructure.
-     *
-     * @return array{verb: string, args: array<string, mixed>, reason: string}|null
-     */
-    /**
      * This turn's bookkeeping hints (`_colony_done`, `_fuel_goal`,
      * `_board_wants`, `_combine_lore`), per agent. {@see step()} injects them
      * into its view of the world; the fallback and loop-break paths rebuilt a
@@ -740,6 +718,81 @@ final class AutoPlayer
         return $raw + ($this->turnHints[$observation->agentId] ?? []);
     }
 
+    /**
+     * The last turn's record, per agent: who picked the verb, what the model
+     * had asked for when that was not it, and how long the model took.
+     *
+     * @var array<int,array<string,mixed>>
+     */
+    private array $lastTurn = [];
+
+    /**
+     * Where the last {@see step()}'s decision came from, for the runner's log.
+     *
+     * `source` is one of:
+     *  - `model`: the model's pick went out unchanged;
+     *  - `adjusted`: its verb went out with different args;
+     *  - `override`: a gate replaced it (`proposed` holds what it asked for);
+     *  - `loop`: the loop breaker replaced it (`proposed` likewise);
+     *  - `ladder`: the model passed and the rules chose;
+     *  - `defence`: combat, decided without asking the model.
+     *
+     * Empty when the last turn submitted nothing (skipped, waited, failed).
+     * Measuring how often the model actually decides used to mean guessing
+     * from how each logged reason was worded.
+     *
+     * @return array{tick?: int, source?: string, verb?: string, proposed?: array{verb: string, args: array}, latency_ms?: int|null}
+     *
+     * @since 3.15.0
+     */
+    public function lastTurn(int $agentId): array
+    {
+        return $this->lastTurn[$agentId] ?? [];
+    }
+
+    /**
+     * Who picked this turn's verb — see {@see lastTurn()}.
+     *
+     * @param array{verb: string, args: array}|null $proposed The model's own pick, before any gate.
+     * @param array{verb: string, args: array}      $final    What is being submitted.
+     */
+    private static function turnSource(?array $proposed, array $final, bool $loopBroken): string
+    {
+        if ($loopBroken) {
+            return 'loop';
+        }
+        if ($proposed === null) {
+            return 'ladder';
+        }
+        if ((string) $proposed['verb'] !== (string) $final['verb']) {
+            return 'override';
+        }
+
+        return (array) ($proposed['args'] ?? []) == (array) ($final['args'] ?? []) ? 'model' : 'adjusted';
+    }
+
+    /**
+     * The move for when the brain's pick is a dead end — a spent research
+     * `combine`, or riding the elevator in circles. Runs the shared ladder
+     * ({@see Ladder::suggestion()}) with the entire tried + world-known
+     * combine space marked exhausted.
+     *
+     * If `inventor_points` rose recently the ladder may offer a *fresh* (untried,
+     * uninvented) pair — research is still paying, so that is allowed through.
+     * Otherwise it drops to infrastructure — `finalize` loose parts, `land` when
+     * there is nothing to do off the ground, `construct` when `composite` +
+     * `metal` are in hand, else sell a surplus, harvest a shortage, or move
+     * toward the materials a build needs. Returns `null` only when the ladder
+     * has nothing either.
+     *
+     * @param string              $reasonLead     Prefix for the decision reason (why the brain's pick was dropped).
+     * @param list<string>        $tried          Combine signatures already submitted this run.
+     * @param array<string, bool> $known          `a+b => true` for world-known sets.
+     * @param bool                $researchPaying Whether inventor points rose recently — if so a fresh
+     *                                            pair is still worth a shot, otherwise go to infrastructure.
+     *
+     * @return array{verb: string, args: array<string, mixed>, reason: string}|null
+     */
     private function fallbackDecision(AgentObservation $observation, string $reasonLead, array $tried, array $known, bool $researchPaying, string $stance = 'homestead', array $departUnreachable = []): ?array
     {
         $raw = $this->withHints($observation);
@@ -826,11 +879,20 @@ final class AutoPlayer
             // else fall through to a relocation step (toward fresh ground / the elevator).
         }
 
-        if ($objective === 'wealth') {
+        // "Wealth" means cash only when there is too little of it. With 440k
+        // credits the loop breaker still sold 20 crystal at the depot's half
+        // price, the same liquidation 3.14.3 stopped in the shared fallback.
+        // Rich, it falls through to the harvest / relocation steps below,
+        // which change the situation just as well.
+        $credits = (int) ($inv['credits'] ?? $raw['credits'] ?? 0);
+        if ($objective === 'wealth' && $credits < Ladder::CREDIT_FLOOR) {
+            $protect = Ladder::protectedLines($this->state->boardWants($observation->agentId), null, $inv);
             $best = null;
             $bestQty = 0;
             foreach ($inv as $res => $qty) {
-                if ($res === 'credits' || ! is_numeric($qty) || ! in_array((string) $res, Ladder::DEPOT_TRADEABLE, true)) {
+                if ($res === 'credits' || ! is_numeric($qty) || ! in_array((string) $res, Ladder::DEPOT_TRADEABLE, true)
+                    || in_array((string) $res, $protect, true)
+                ) {
                     continue;
                 }
                 if ((int) $qty >= 15 && (int) $qty > $bestQty) {
@@ -1027,6 +1089,8 @@ final class AutoPlayer
      */
     public function step(int $agent_id, string $token = '', ?string $lease = null, ?int $leaseInterval = null): PromiseInterface
     {
+        unset($this->lastTurn[$agent_id]);
+
         if ($lease !== null && ! $this->state->acquireAutoplayLease($lease, $leaseInterval)) {
             return resolve(sprintf(
                 '⏸️ Autoplay turn skipped — another driver (`%s`) holds the lease.',
@@ -1324,6 +1388,8 @@ final class AutoPlayer
             if (($defence = Ladder::defensiveAction($rawObs)) !== null) {
                 $altNow = (int) ($observation->get('altitude') ?? 0);
 
+                $this->lastTurn[$agent_id] = ['tick' => $tick, 'source' => 'defence', 'verb' => (string) $defence['verb']];
+
                 return $this->nha->intentWithToken($agent_id, $token, $defence['verb'], $defence['args'])
                     ->then(function ($queued) use ($agent_id, $defence, $tick, $altNow) {
                         $queuedId = ((array) $queued)['queued_intent'] ?? null;
@@ -1334,6 +1400,7 @@ final class AutoPlayer
                             'queued_intent' => $queuedId,
                             'tick' => $tick,
                             'alt' => $altNow,
+                            'source' => 'defence',
                         ]);
                         $args = $defence['args'] === [] ? '' : ' ' . json_encode($defence['args'], JSON_UNESCAPED_SLASHES);
                         $ref = $queuedId !== null ? " (queued #{$queuedId})" : '';
@@ -1525,6 +1592,9 @@ final class AutoPlayer
             // applied hold turn afterwards pushed it out of the model's view, so
             // the gate refusal was forgotten and re-earned every cycle.
             $context['rejections'] = self::recentRejections($pre['profile'] ?? null, $tick, 5);
+            // Our own gates' refusals, which the engine never sees and so the
+            // feed above never carries.
+            $context['vetoes'] = $this->state->recentVetoes($agent_id, $tick);
             $context['recipes'] = $this->recipesFor(self::gearGaps($rawObs, $colonyDoneNow));
             if ($holdOverrun > 0) {
                 $context['hold_overrun'] = $holdOverrun;
@@ -1552,6 +1622,10 @@ final class AutoPlayer
             $altNow = (int) ($observation->get('altitude') ?? 0);
 
             return $colonyBoardPromise->then(fn(array $colonyBoard) => $this->brain->decide($observation, $context ?: null, $stance)->then(function (?array $decision) use ($agent_id, $token, $tick, $altNow, $observation, $rawObs, $known, $tried, $dead, $researchPaying, $recent, $loop, $loopObjective, $stance, $holdingForWindow, $departNow, $departServiceable, $departCooldown, $rideCooldown, $departUnreachable, $departSelectSkip, $shipStranded, $inTransit, $noDestinations, $pre, $last, $colonyBoard, $remoteBody) {
+                // The model's own pick, before any gate or loop break rewrites
+                // it: {@see turnSource()} compares the submission against this.
+                $proposed = $decision === null ? null : ['verb' => (string) $decision['verb'], 'args' => (array) ($decision['args'] ?? [])];
+
                 if ($decision === null && $loopObjective === null && ! $holdingForWindow) {
                     // Record the pass so a wait-streak is visible to detectLoop.
                     $this->state->recordDecision($agent_id, ['verb' => 'wait', 'args' => [], 'reason' => '', 'queued_intent' => null, 'tick' => $tick, 'alt' => $altNow]);
@@ -2699,8 +2773,24 @@ final class AutoPlayer
                     $this->state->clearCapabilityClass($agent_id, 'capability');
                 }
 
+                $source = self::turnSource($proposed, $decision, $loopObjective !== null);
+                if ($source === 'override') {
+                    $this->state->recordVeto($agent_id, $proposed['verb'], $proposed['args'], (string) $decision['reason'], $tick);
+                }
+                $replaced = in_array($source, ['override', 'loop'], true) ? $proposed : null;
+                $this->lastTurn[$agent_id] = array_filter([
+                    'tick' => $tick,
+                    'source' => $source,
+                    'verb' => (string) $decision['verb'],
+                    'proposed' => $replaced,
+                    'latency_ms' => $this->brain->lastLatencyMs(),
+                ], static fn($v): bool => $v !== null);
+
+                // `$pre` and `$last` were read below and never captured, so
+                // "last turn's X was rejected" could not appear: `??` hid the
+                // undefined variables and the line was always empty.
                 return $this->nha->intentWithToken($agent_id, $token, $decision['verb'], $decision['args'])
-                    ->then(function ($queued) use ($agent_id, $decision, $tick, $altNow, $loop, $loopObjective, $stance) {
+                    ->then(function ($queued) use ($agent_id, $decision, $tick, $altNow, $loop, $loopObjective, $stance, $pre, $last, $source, $replaced) {
                         $queued = (array) $queued;
                         $queuedId = $queued['queued_intent'] ?? null;
 
@@ -2711,6 +2801,8 @@ final class AutoPlayer
                             'queued_intent' => $queuedId,
                             'tick' => $tick,
                             'alt' => $altNow,
+                            'source' => $source,
+                            'proposed' => $replaced,
                         ]);
 
                         $ref = $queuedId !== null ? " (queued #{$queuedId})" : '';
