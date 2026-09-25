@@ -6,6 +6,13 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+### Fixed
+- **`composer install` could not resolve from Packagist.** DiscordPHP's
+  `dev-master` now requires `discord-php/http ^10.9.8`, which the
+  `dev-master as 10.1.7` alias cannot satisfy. The alias is now
+  `dev-master as 10.9.8`. Machines that link the sibling checkouts through the
+  global Composer config never saw the failure.
+
 ## [3.13.1] - 2026-09-21
 
 ### Fixed

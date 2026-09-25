@@ -360,7 +360,7 @@ The NHA game engine is also an external authority. This repository adapts its AP
 }
 ```
 
-`discord-php/http` is `canonical: false` so a sibling that only needs it transitively (e.g. via `^10.1.7`) still resolves a real Packagist tag; this repo keeps `discord-php/http: "dev-master as 10.1.7"` in `require` so its own symlink wins.
+`discord-php/http` is `canonical: false` so a sibling that only needs it transitively (e.g. via `^10.9.8`) still resolves a real Packagist tag; this repo keeps `discord-php/http: "dev-master as 10.9.8"` in `require` so its own symlink wins.
 
 ## Repo worldview
 
