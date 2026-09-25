@@ -2559,6 +2559,37 @@ final class AutoPlayer
                     }
                 }
 
+                // Never `finalize` a bundle that cannot fly OR drive. It is
+                // accepted — so no refusal gate sees it — and it is irreversible:
+                // every loose part is consumed into a vehicle that does nothing.
+                // Live, the model decided to "build the flyer to reach the outer
+                // system" (the obstacle was a thermal_core, not a ship; it owns
+                // a working flyer) and finalized one bare frame into vehicle
+                // #151777 "drives=False v=0 flies=False". The rule is the
+                // engine's own: no cockpit, no control; no propulsion, no motion.
+                // Drones are vehicles too, so this blocks only the inert case,
+                // never finalize as such.
+                if (($decision['verb'] ?? '') === 'finalize') {
+                    $parts = Ladder::looseParts($rawObs);
+                    $control = in_array('cockpit', $parts, true);
+                    $motion = array_intersect($parts, ['engine', 'jet', 'propeller']) !== [];
+                    if ($parts === [] || ! $control || ! $motion) {
+                        $lacks = $parts === [] ? 'no loose parts' : (! $control ? 'no cockpit (no control)' : 'no engine, jet or propeller (no motion)');
+                        $decision = $this->earnStep(
+                            $rawObs,
+                            (array) $observation->getInventory(),
+                            "not finalizing — {$lacks}; it would be an inert hull that consumes the parts",
+                            $tried,
+                            $known,
+                            $stance,
+                            $departSelectSkip,
+                            $this->state->boardWants($agent_id),
+                            'finalize',
+                        );
+                        $verb = (string) $decision['verb'];
+                    }
+                }
+
                 // Likewise a `build` whose bill we cannot cover. `BUILD_COST` is
                 // transcribed from the engine, so this is checkable up front
                 // rather than discovered one refusal at a time — live, 17 of the
@@ -2566,6 +2597,18 @@ final class AutoPlayer
                 if (($decision['verb'] ?? '') === 'build') {
                     $part = (string) (($decision['args'] ?? [])['part'] ?? '');
                     $bill = GameData::BUILD_COST[$part] ?? [];
+                    // The upgrade items in `with:` are billed too — the engine
+                    // adds them to the part's cost ("insufficient for jet (need
+                    // {metal: 10, crystal: 2, ion_thruster: 1})"). Checking only
+                    // BUILD_COST let a model `build jet with ion_thruster` through
+                    // with no thruster in hold, for a guaranteed refusal.
+                    $with = ($decision['args'] ?? [])['with'] ?? [];
+                    foreach ((array) $with as $k => $v) {
+                        [$item, $qty] = is_int($k) ? [(string) $v, 1] : [(string) $k, max(1, (int) $v)];
+                        if ($item !== '') {
+                            $bill[$item] = (int) ($bill[$item] ?? 0) + $qty;
+                        }
+                    }
                     $held = (array) $observation->getInventory();
                     $missing = [];
                     foreach ($bill as $res => $qty) {

@@ -6,6 +6,25 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.14.2] - 2026-09-25
+
+### Fixed
+- **An inert hull could be finalized.** Given the new destination digest, the
+  model decided to "build the flyer to reach the outer system" — the obstacle
+  was a `thermal_core`, and it already owns a working flyer — then finalized a
+  single bare frame into vehicle #151777, *"drives=False v=0 flies=False"*. The
+  engine accepts that, so no refusal gate saw it, and it is irreversible: every
+  loose part is consumed into a vehicle that does nothing. `finalize` is now
+  refused for a bundle with no cockpit (no control) or no engine, jet or
+  propeller (no motion) — the engine's own rule. Drones are vehicles too, so it
+  blocks only the inert case, and the ladder's own finalize paths are all behind
+  `flyerReady()`, which already requires both.
+- **The `build` gate never billed the upgrade item.** It checked
+  `GameData::BUILD_COST[part]` alone, but the engine adds each `with:` item to
+  the bill — *"insufficient for jet (need {metal: 10, crystal: 2, ion_thruster:
+  1})"* — so a model `build jet with ion_thruster` went out with no thruster in
+  hold, for a guaranteed refusal.
+
 ## [3.14.1] - 2026-09-25
 
 ### Fixed

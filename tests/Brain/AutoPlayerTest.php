@@ -2659,6 +2659,55 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Live: the model decided to "build the flyer to reach the outer system"
+     * and finalized ONE bare frame into vehicle #151777, "drives=False v=0
+     * flies=False". The engine accepts that, so no refusal gate saw it — and it
+     * is irreversible: the loose parts are consumed into a vehicle that does
+     * nothing. By the engine's own rule, no cockpit means no control.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnInertHullIsNeverFinalized(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+
+        // colony_exists false, as live: otherwise the invest path takes the
+        // turn first and this never reaches the finalize gate at all.
+        $oneFrame = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false, 'loose_parts' => ['frame']]);
+        (new AutoPlayer($this->nhaWith($oneFrame), $this->brainReturning('{"verb":"finalize","args":{}}'), $state))->step(142285, 'tok');
+
+        self::assertNotSame('finalize', $this->posts[0][1]['verb'], 'a lone frame cannot fly or drive');
+    }
+
+    /**
+     * The `build` gate checked the part's base cost and never its `with:`
+     * upgrade item, which the engine bills too — so `build jet with
+     * ion_thruster` went out with no thruster in hold: "insufficient for jet
+     * (need {metal: 10, crystal: 2, ion_thruster: 1})".
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testABuildIsBilledForItsUpgradeItemToo(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+
+        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false,
+            'inventory' => ['metal' => 130, 'crystal' => 1082, 'ion_thruster' => 0]]);
+        // No ship yet — gearing a first hull, where building is RIGHT and this
+        // billing check is the only thing between a model `build` and the
+        // engine. (With a flyer in hold the "do not build a second" guard
+        // swaps the build out first, and this would never be exercised.)
+        // Assigned, not merged: array_replace_recursive keeps a list it is
+        // handed an empty replacement for.
+        $grounded['vehicles'] = [];
+        (new AutoPlayer($this->nhaWith($grounded), $this->brainReturning('{"verb":"build","args":{"part":"jet","with":{"ion_thruster":1}}}'), $state))->step(142285, 'tok');
+
+        self::assertNotSame('build', $this->posts[0][1]['verb'], 'metal and crystal are there; the thruster is not');
+    }
+
+    /**
      * A strand counter left over from an old trip home sat at 65, past the 40
      * that calls `distress` — so the next underfuelled return would have spent
      * HP and jettisoned its whole haul on its very first turn.
