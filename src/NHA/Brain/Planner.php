@@ -63,8 +63,17 @@ final class Planner
      *                                          {@see AgentBrain::decide()}, plus `objectives`
      *                                          (the world's board) and the current `plan`, if any.
      *
-     * @return PromiseInterface<array{goal: string, steps: list<string>, why: string}|null>
-     *                                                                                      null when the reply is unusable.
+     * Every draft is checked by {@see critique()}. A draft with problems goes
+     * back to the model once, with the problems listed, and the revision is
+     * used if it parses. Otherwise the draft stands. The result says which it
+     * was: `review` holds the problems found, `revised` whether a revision
+     * replaced the draft.
+     *
+     * @param array<string,mixed>|null $context Also read: `recipe_book`, the whole codex as
+     *                                          item → needs, for the review.
+     *
+     * @return PromiseInterface<array{goal: string, steps: list<string>, why: string, review: list<string>, revised: bool}|null>
+     *                                                                                                                           null when the reply is unusable.
      */
     public function plan(AgentObservation $observation, ?array $context = null): PromiseInterface
     {
@@ -72,9 +81,135 @@ final class Planner
             ['role' => 'system', 'content' => self::systemPrompt()],
             ['role' => 'user', 'content' => self::brief($observation, $context)],
         ];
+        $raw = json_decode(json_encode($observation->jsonSerialize()), true);
+        $raw = is_array($raw) ? $raw : [];
+        $book = array_filter((array) ($context['recipe_book'] ?? $context['recipes'] ?? []), 'is_string');
 
-        return $this->ollama->chat($messages, self::SCHEMA, 0.3)
-            ->then(static fn(string $content): ?array => self::parsePlan($content));
+        return $this->ollama->chat($messages, self::SCHEMA, 0.3)->then(function (string $content) use ($messages, $raw, $book): PromiseInterface|array|null {
+            $draft = self::parsePlan($content);
+            if ($draft === null) {
+                return null;
+            }
+            $problems = self::critique($draft, $raw, $book);
+            if ($problems === []) {
+                return $draft + ['review' => [], 'revised' => false];
+            }
+
+            $messages[] = ['role' => 'assistant', 'content' => $content];
+            $messages[] = ['role' => 'user', 'content' => "Your plan has problems:\n- " . implode("\n- ", $problems)
+                . "\nFix them and give the whole plan again. Reply with JSON only."];
+            $kept = $draft + ['review' => $problems, 'revised' => false];
+
+            return $this->ollama->chat($messages, self::SCHEMA, 0.3)->then(
+                static fn(string $again): array => ($revision = self::parsePlan($again)) !== null
+                    ? $revision + ['review' => $problems, 'revised' => true]
+                    : $kept,
+                static fn(): array => $kept,
+            );
+        });
+    }
+
+    /**
+     * What is wrong with a plan, as lines the planner can act on — or none.
+     *
+     * Deliberately narrow, because a false alarm costs a pointless revision
+     * and a false fix costs a pointless trip:
+     *  - a BODY resource ({@see GameData::BODY_MINE}) the plan needs, named in
+     *    it or in the recipe of an item it names (one level down), that the
+     *    agent does not hold and that no step gets. Generic clauses such as
+     *    "an electrolyte" are not checked: the game matches ingredients by
+     *    physics tags, and `electrolyte` and `salt` are both real items.
+     *  - steps written as commands (`mine{n=10}`) rather than milestones.
+     *
+     * The first live plan failed both: it combined `mars_ice` in its last step
+     * with none in the hold and no step going to Mars for it.
+     *
+     * @param array{goal: string, steps: list<string>} $plan
+     * @param array<string,mixed>                      $raw        The observation.
+     * @param array<string,string>                     $recipeBook Item → the codex's needs text.
+     *
+     * @return list<string>
+     *
+     * @since 3.17.0
+     */
+    public static function critique(array $plan, array $raw, array $recipeBook = []): array
+    {
+        $inv = (array) ($raw['inventory'] ?? []);
+        $steps = array_map('mb_strtolower', $plan['steps']);
+        $text = mb_strtolower($plan['goal']) . "\n" . implode("\n", $steps);
+        $bodyResources = array_values(array_unique(array_merge(...array_values(GameData::BODY_MINE))));
+
+        // Body resources the plan needs → the item needing each ('' = named outright).
+        $needs = [];
+        foreach ($recipeBook as $item => $needText) {
+            if (! self::names($text, (string) $item)) {
+                continue;
+            }
+            $chain = [(string) $item => mb_strtolower($needText)];
+            foreach ($recipeBook as $sub => $subText) {
+                if ($sub !== $item && self::names($chain[(string) $item], (string) $sub)) {
+                    $chain[(string) $sub] = mb_strtolower($subText);
+                }
+            }
+            foreach ($chain as $for => $need) {
+                foreach ($bodyResources as $res) {
+                    if (self::names($need, $res)) {
+                        $needs[$res] ??= (string) $for;
+                    }
+                }
+            }
+        }
+        foreach ($bodyResources as $res) {
+            if (self::names($text, $res)) {
+                $needs[$res] ??= '';
+            }
+        }
+
+        $problems = [];
+        $here = Ladder::atBody($raw);
+        foreach ($needs as $res => $for) {
+            if ((int) ($inv[$res] ?? 0) > 0) {
+                continue;
+            }
+            $bodies = GameData::minedOn($res);
+            foreach ($steps as $step) {
+                $namesSource = self::names($step, $res)
+                    || array_filter($bodies, static fn(string $b): bool => self::names($step, $b)) !== [];
+                if ($namesSource && preg_match('/\b(mine|mining|get|gather|collect|haul|fetch|obtain|acquire|harvest|buy|trade|hold|stock)\b/u', $step)) {
+                    continue 2;
+                }
+            }
+            $where = implode(' or ', $bodies);
+            $problems[] = sprintf(
+                '%s%s: you hold none, the depot does not sell it, and no step gets it. `mine` on %s yields it — %s.',
+                $res,
+                $for === '' ? '' : " (needed for {$for})",
+                $where,
+                $here !== null && in_array($here, $bodies, true)
+                    ? "you are on {$here} now, so add a step to mine it before the step that uses it"
+                    : "add steps to fly to {$where} and mine it before the step that uses it",
+            );
+        }
+
+        $commands = [];
+        foreach ($steps as $i => $step) {
+            if (preg_match('/^\s*[a-z_]+\s*\{/u', $step)) {
+                $commands[] = $i + 1;
+            }
+        }
+        if ($commands !== []) {
+            $problems[] = (count($commands) > 1 ? 'Steps ' . implode(', ', $commands) . ' are' : "Step {$commands[0]} is")
+                . ' written as a command. Write each step as a milestone the player can check in its observation'
+                . ' ("hold 1 battery", "be at mars"), not as an action.';
+        }
+
+        return $problems;
+    }
+
+    /** Whether `$text` names `$item` as a whole word — `mars` is not named by `mars_ice`. */
+    private static function names(string $text, string $item): bool
+    {
+        return (bool) preg_match('/(?<![a-z0-9_])' . preg_quote(mb_strtolower($item), '/') . '(?![a-z0-9_])/u', $text);
     }
 
     /**
@@ -87,6 +222,13 @@ final class Planner
     {
         $context = ($context ?? []) + ['closing' => 'Set the plan. Reply with JSON only.'];
         $digest = PromptBuilder::build($observation, $context);
+
+        $mined = [];
+        foreach (GameData::BODY_MINE as $body => $yields) {
+            $mined[] = "{$body}: " . implode(', ', $yields);
+        }
+        $digest .= "\n\nBody resources (only `mine` on that body yields them; the depot sells none): " . implode('; ', $mined) . '.';
+
         $board = trim((string) ($context['objectives'] ?? ''));
 
         return $board === '' ? $digest : $digest . "\n\nThe world's objective board:\n" . $board;
@@ -118,8 +260,13 @@ final class Planner
         $goal = is_string($data['goal'] ?? null) ? trim($data['goal']) : '';
         $steps = [];
         foreach ((array) ($data['steps'] ?? []) as $step) {
-            if (is_string($step) && ($step = trim($step)) !== '') {
-                $steps[] = mb_substr($step, 0, 160);
+            // Under a schema the model sometimes closes and reopens its quotes
+            // inside ONE string — live: `land_body on mars","mine mars_ice
+            // on mars","combine …` came back as a single step. Split it back.
+            foreach (is_string($step) ? preg_split('/"\s*,\s*"/u', $step) : [] as $part) {
+                if (($part = trim($part, " \t\n\r\0\x0B\"")) !== '') {
+                    $steps[] = mb_substr($part, 0, 160);
+                }
             }
         }
         if ($goal === '' || $steps === []) {
@@ -163,6 +310,8 @@ final class Planner
             - Include the sub-steps a recipe needs: if a thermal_core needs a battery, making the battery is a step.
             - Name items exactly as the recipes, Destinations and Inventory spell them (`mars_ice` is not `ice`),
               and satisfy every clause of a recipe: "2 different metals + an electrolyte" is three inputs, not two.
+            - A body resource you do not hold means a trip: fly to that body and `mine` it, as steps of their own,
+              before the step that uses it. The Body resources line says which body yields what.
 
             IF A PLAN IS ALREADY SHOWN
             - Keep it, starting from its current step, if it still fits the situation.

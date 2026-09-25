@@ -124,5 +124,7 @@ A second, rarer call — the **strategist** (`Brain\Planner`) — sets one goal 
 in `var/state.json` and shown in every turn prompt with the current step marked. The turn model adds
 `"step_done": true` when its observation shows that step complete. The plan is revised when it is missing,
 finished, about 40 minutes old, the agent reaches or leaves a body, or it stops working (repeated loop
-breaks, an overrun hold, one proposal blocked again and again). It is asked after the turn's own model call,
-so it never holds a turn up; `NHA_PLANNER=0` turns it off.
+breaks, an overrun hold, one proposal blocked again and again) after about 15 minutes of trying. Each draft
+is checked first — a body resource it needs but never fetches (`mars_ice` without a trip to Mars), or steps
+written as commands — and sent back once if it fails. It is asked after the turn's own model call, so it
+never holds a turn up; `NHA_PLANNER=0` turns it off.

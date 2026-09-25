@@ -3017,16 +3017,17 @@ class AutoPlayerTest extends NHAUnitTestCase
 
     /**
      * Repeated blocks since the plan was set mean the plan is not working:
-     * ask for a new one. Blocks from before it was set do not count.
+     * ask for a new one — once it has had time to work. Blocks from before it
+     * was set do not count.
      *
      * @covers \NHA\Brain\AutoPlayer::step
      */
     public function testAPlanIsRevisedWhenOneProposalKeepsGettingBlocked(): void
     {
-        $run = function (int $blockedAt): int {
+        $run = function (int $blockedAt, int $setAt = -500): int {
             @unlink($this->statePath);
             $state = new StateStore($this->statePath);
-            $state->setPlan(142287, 'g', ['a', 'b'], 'w', 20, 'home');
+            $state->setPlan(142287, 'g', ['a', 'b'], 'w', $setAt, 'home');
             for ($i = 0; $i < 3; $i++) {
                 $state->recordVeto(142287, 'finalize', [], 'no cockpit', $blockedAt);
             }
@@ -3042,7 +3043,8 @@ class AutoPlayerTest extends NHAUnitTestCase
         };
 
         self::assertSame(1, $run(30), 'blocked three times since the plan was set');
-        self::assertSame(0, $run(10), 'the blocks predate the plan');
+        self::assertSame(0, $run(-600), 'the blocks predate the plan');
+        self::assertSame(0, $run(30, 20), 'the plan has barely started');
     }
 
     /**
@@ -3068,5 +3070,69 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertCount(2, $this->posts, 'both turns went out');
         self::assertNull($state->plan(142287));
         self::assertCount(1, $calls, 'not asked again inside the retry gap');
+    }
+
+    /**
+     * The review needs the whole codex, which only {@see AutoPlayer} holds
+     * (from `/rules`): a plan that makes a thermal_core with no trip for its
+     * `mars_ice` is sent back, and the status line says so.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testThePlanReviewSeesTheWholeCodex(): void
+    {
+        $state = new StateStore($this->statePath);
+        $replies = [
+            '{"goal":"make a thermal_core","steps":["hold 1 battery","hold 1 thermal_core"],"why":"w"}',
+            '{"goal":"make a thermal_core","steps":["be at mars","mine mars_ice","hold 1 thermal_core"],"why":"w"}',
+        ];
+        $calls = 0;
+        $planner = new Planner(new OllamaClient('http://x', 'm', function () use (&$replies, &$calls) {
+            ++$calls;
+
+            return resolve(json_encode(['message' => ['content' => array_shift($replies)], 'done' => true]));
+        }));
+        // Every GET answers with this payload, /rules included.
+        $nha = $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0,
+            'recipes' => [['item' => 'thermal_core', 'needs' => 'a battery + mars_ice + a NON-magnetic metal']]]);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state, $planner);
+
+        $line = '';
+        $player->step(142287, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertSame(2, $calls, 'draft, then revision');
+        self::assertSame(['be at mars', 'mine mars_ice', 'hold 1 thermal_core'], $state->plan(142287)['steps']);
+        self::assertStringContainsString('🗺️ new plan (revised after review): make a thermal_core — first: be at mars', $line);
+    }
+
+    /**
+     * A stale plan the model hands back unchanged keeps its progress, and the
+     * status line says it was kept rather than announcing a "new" plan.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAPlanHandedBackUnchangedKeepsItsStep(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->setPlan(142287, 'found triton', ['make a battery', 'make a thermal_core', 'fly to triton'], 'w', -1_300, 'home');
+        $state->advancePlan(142287, -1_200);
+        $calls = [];
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+            $this->brainReturning('{"verb":"mine","args":{"n":2}}'),
+            $state,
+            $this->plannerReplying('{"goal":"found triton","steps":["make a battery","make a thermal_core","fly to triton"],"why":"still"}', $calls),
+        );
+
+        $line = '';
+        $player->step(142287, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertCount(1, $calls, 'stale, so reviewed');
+        self::assertSame(1, $state->plan(142287)['step']);
+        self::assertStringContainsString('🗺️ plan reviewed, unchanged: found triton (on step 2/3)', $line);
     }
 }

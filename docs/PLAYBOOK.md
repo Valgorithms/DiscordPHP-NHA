@@ -116,11 +116,21 @@ prompt, just ahead of the SUGGESTED line, with the current step marked `→`; th
 turn model adds `"step_done": true` when its observation shows that step done
 (at most one advance per 20 ticks). `planDue()` asks again when there is no
 plan, it is finished or 1,200 ticks old, the agent has reached or left a body,
-or it has stalled: two or more loop breaks in a row, an overrun hold, or one
-proposal blocked three times since the plan was set. Never within 150 ticks of
-the last ask, answered or not. The call is made after the turn's own model call
-returns and is not awaited, so it never holds a turn up; `NHA_PLANNER=0` turns
-it off.
+or it has stalled (two or more loop breaks in a row, an overrun hold, or one
+proposal blocked three times since the plan was set) after being given 450
+ticks to work. Never within 150 ticks of the last ask, answered or not. A plan
+handed back unchanged keeps its current step. The call is made after the turn's
+own model call returns and is not awaited, so it never holds a turn up;
+`NHA_PLANNER=0` turns it off.
+
+Every draft is reviewed by `Planner::critique()` before it is adopted. It
+flags a body resource ([`GameData::BODY_MINE`](../src/NHA/Brain/GameData.php),
+transcribed from the engine) that the plan needs, directly or through a recipe
+of an item it names, when the agent holds none and no step gets it; and steps
+written as commands instead of milestones. A flawed draft goes back to the
+model once with the problems listed, and the revision is used if it parses.
+Generic recipe clauses ("an electrolyte") are not checked: the game matches by
+physics tags, and `electrolyte` and `salt` are both real items.
 
 **Colony board** (`GET /colony/{body}` + `Ladder::colonyFundStep()`). On a body
 surface the mission is to finish that body's co-op colony. The board carries

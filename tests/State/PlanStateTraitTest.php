@@ -77,7 +77,8 @@ class PlanStateTraitTest extends NHAUnitTestCase
 
         $store = $this->planned();
         self::assertFalse($store->planDue(7, 1_100, false, 'home'), 'fresh, here, working');
-        self::assertTrue($store->planDue(7, 1_100, true, 'home'), 'stalled');
+        self::assertFalse($store->planDue(7, 1_100, true, 'home'), 'stalled, but the plan has barely started');
+        self::assertTrue($store->planDue(7, 1_450, true, 'home'), 'stalled after it had time to work');
         self::assertTrue($store->planDue(7, 1_100, false, 'mars'), 'arrived somewhere else');
         self::assertTrue($store->planDue(7, 2_200, false, 'home'), 'stale');
 
@@ -100,5 +101,24 @@ class PlanStateTraitTest extends NHAUnitTestCase
 
         self::assertFalse($store->planDue(7, 1_149, true, 'home'), 'no plan and stalled, but just asked');
         self::assertTrue($store->planDue(7, 1_150, true, 'home'));
+    }
+
+    /**
+     * Asked to review its plan, the model often hands it back unchanged; that
+     * must not send the agent back to step 1. A different plan starts over.
+     *
+     * @covers \NHA\State\PlanStateTrait::setPlan
+     */
+    public function testReadoptingTheSamePlanKeepsItsProgress(): void
+    {
+        $store = $this->planned();
+        $store->advancePlan(7, 1_020);
+
+        $store->setPlan(7, 'found triton', ['make a battery', 'make a thermal_core', 'fly to triton'], 'still right', 2_300, 'home');
+        self::assertSame(1, $store->plan(7)['step'], 'same goal, same steps: progress kept');
+        self::assertSame(2_300, $store->plan(7)['set_at'], 'but the plan counts as freshly reviewed');
+
+        $store->setPlan(7, 'found triton', ['be at mars', 'mine mars_ice', 'make a thermal_core'], 'revised', 2_400, 'home');
+        self::assertSame(0, $store->plan(7)['step'], 'new steps start over');
     }
 }

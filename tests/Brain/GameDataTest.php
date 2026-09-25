@@ -192,4 +192,14 @@ class GameDataTest extends NHAUnitTestCase
     {
         $this->assertSame([], GameData::remainingShipBill(self::BUNDLE, self::UPGRADE, self::BUNDLE, []));
     }
+
+    /**
+     * @covers \NHA\Brain\GameData::minedOn
+     */
+    public function testABodyResourceIsTracedToTheBodiesThatYieldIt(): void
+    {
+        $this->assertSame(['mars'], GameData::minedOn('mars_ice'));
+        $this->assertSame(['phobos', 'deimos'], GameData::minedOn('c_regolith'));
+        $this->assertSame([], GameData::minedOn('iron'), 'Earth and the depot supply it');
+    }
 }

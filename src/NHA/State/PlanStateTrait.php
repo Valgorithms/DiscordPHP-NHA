@@ -50,20 +50,37 @@ trait PlanStateTrait
     private const PLAN_STEP_MIN_TICKS = 20;
 
     /**
-     * Adopts a new plan, starting at its first step.
+     * How long a plan gets before a stall may replace it. Loop breaks fire on
+     * roughly one turn in five in ordinary play, so without this a stall
+     * replanned every {@see PLAN_RETRY_TICKS}: live, twice in 400 ticks, each
+     * time the same goal, each time back to step 1.
+     *
+     * @since 3.17.0
+     */
+    private const PLAN_STALL_MIN_TICKS = 450;
+
+    /**
+     * Adopts a plan, starting at its first step — unless it is the plan
+     * already being worked (same goal, same steps), whose progress is kept.
+     * Asked to review its own plan, the model often hands it back unchanged,
+     * and that must not send the agent back to step 1.
      *
      * @param list<string> $steps
      * @param string       $where Where the agent was when the plan was made ({@see planDue()}).
      */
     public function setPlan(int $agent_id, string $goal, array $steps, string $why, int $tick, string $where): void
     {
+        $steps = array_values($steps);
+        $prior = $this->plan($agent_id);
+        $same = $prior !== null && $prior['goal'] === $goal && $prior['steps'] === $steps;
+
         $this->data['agent_plan'][(string) $agent_id] = [
             'goal' => $goal,
-            'steps' => array_values($steps),
+            'steps' => $steps,
             'why' => $why,
-            'step' => 0,
+            'step' => $same ? $prior['step'] : 0,
             'set_at' => $tick,
-            'stepped_at' => $tick,
+            'stepped_at' => $same ? $prior['stepped_at'] : $tick,
             'where' => $where,
         ];
         $this->save();
@@ -134,7 +151,8 @@ trait PlanStateTrait
      * Never within {@see PLAN_RETRY_TICKS} of the last attempt, answered or
      * not. Otherwise yes when there is no plan, it is finished, it is older
      * than {@see PLAN_REFRESH_TICKS}, the agent has reached or left a body
-     * since it was made, or the caller reports a stall.
+     * since it was made, or the caller reports a stall and the plan has had
+     * {@see PLAN_STALL_MIN_TICKS} to work.
      *
      * @param bool   $stalled Loop breaks piling up, a hold that overran, or the same proposal blocked repeatedly.
      * @param string $where   Where the agent is now: a body name, or the home system.
@@ -150,8 +168,10 @@ trait PlanStateTrait
             return true;
         }
 
-        return $stalled
+        $age = $tick - $p['set_at'];
+
+        return ($stalled && $age >= self::PLAN_STALL_MIN_TICKS)
             || $p['where'] !== $where
-            || $tick - $p['set_at'] >= self::PLAN_REFRESH_TICKS;
+            || $age >= self::PLAN_REFRESH_TICKS;
     }
 }

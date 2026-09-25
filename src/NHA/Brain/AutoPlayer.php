@@ -756,14 +756,22 @@ final class AutoPlayer
         }
         $this->state->recordPlanAttempt($agent_id, $tick);
         $context['objectives'] = $this->state->objectives($agent_id);
+        // The whole codex, for the planner's review of its own draft.
+        $context['recipe_book'] = $this->recipeNeeds;
 
         $this->planner->plan($observation, $context)->then(
             function (?array $plan) use ($agent_id, $tick, $where): void {
                 if ($plan === null) {
                     return;
                 }
+                $prior = $this->state->plan($agent_id);
                 $this->state->setPlan($agent_id, $plan['goal'], $plan['steps'], $plan['why'], $tick, $where);
-                $this->planNews[$agent_id] = "🗺️ new plan: {$plan['goal']} — first: {$plan['steps'][0]}";
+                $now = (array) $this->state->plan($agent_id);
+                $n = count($plan['steps']);
+                $this->planNews[$agent_id] = $prior !== null && $prior['goal'] === $plan['goal'] && $prior['steps'] === $plan['steps']
+                    ? "🗺️ plan reviewed, unchanged: {$plan['goal']} (on step " . min($n, (int) ($now['step'] ?? 0) + 1) . "/{$n})"
+                    : '🗺️ new plan' . (($plan['revised'] ?? false) ? ' (revised after review)' : '')
+                        . ": {$plan['goal']} — first: {$plan['steps'][0]}";
             },
             // A failed call waits out the retry gap; turns carry on meanwhile.
             static function (): void {},

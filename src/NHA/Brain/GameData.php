@@ -20,7 +20,8 @@ namespace NHA\Brain;
  *  - `engine/vehicles.py`  → {@see PART}, {@see BUILD_COST}, {@see PART_UPGRADES},
  *                            {@see finalizeStats()} (a faithful port of
  *                            `finalize_stats`, integer-for-integer).
- *  - `engine/engine.py`    → {@see GRAVITY}, {@see TWR_DEPART}, {@see DV_NEED}.
+ *  - `engine/engine.py`    → {@see GRAVITY}, {@see TWR_DEPART}, {@see DV_NEED},
+ *                            {@see BODY_MINE}.
  *  - `engine/crafting.py`  → {@see CRAFT} (the physics-pattern recipe tree).
  *
  * WHY THIS FILE EXISTS. For weeks the brain steered the agent with *guessed*
@@ -60,6 +61,39 @@ final class GameData
     /** Δv (km/s ×10) each destination's transfer needs — ship `fuel_cap` + fuel must clear it (`engine.py` `DV_NEED`). */
     /** @deprecated 3.11.0 Read the live table with {@see Bodies::all()}; this is the offline fallback. */
     public const DV_NEED = ['deimos' => 50, 'phobos' => 55, 'mars' => 100, 'venus' => 130];
+
+    /**
+     * What `mine` yields on each body: its UNIQUE resources (`engine.py`
+     * `BODY_MINE`, transcribed 2026-09-25, Season 8; the yield weights are
+     * dropped). The depot sells none of them and Earth has none, so a plan that
+     * needs one needs the trip, or a trade.
+     *
+     * @var array<string,list<string>>
+     *
+     * @since 3.17.0
+     */
+    public const BODY_MINE = [
+        'phobos' => ['c_regolith', 'stickney_glass'],
+        'deimos' => ['c_regolith', 'void_pumice'],
+        'mars' => ['mars_regolith', 'perchlorate', 'mars_ice'],
+        'venus' => ['cloud_acid', 'nitrogen', 'co2'],
+        'enceladus' => ['cryo_brine', 'clean_ice'],
+        'titan' => ['methane', 'tholin'],
+        'triton' => ['nitrogen_ice', 'neon'],
+    ];
+
+    /**
+     * The bodies whose `mine` yields `$resource` ({@see BODY_MINE}); empty for
+     * anything Earth or the depot supplies.
+     *
+     * @return list<string>
+     *
+     * @since 3.17.0
+     */
+    public static function minedOn(string $resource): array
+    {
+        return array_keys(array_filter(self::BODY_MINE, static fn(array $yields): bool => in_array($resource, $yields, true)));
+    }
 
     /** Items HELD (not on the ship) and consumed on arrival (`engine.py` `BODY_ITEMS`). */
     public const BODY_ITEMS = [

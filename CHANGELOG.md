@@ -6,6 +6,33 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-09-25
+
+### Added
+- **The planner reviews its own draft.** The first live plan made a
+  `thermal_core` from `mars_ice` with none in the hold and no step going to Mars
+  for it, and wrote every step as a command. `Planner::critique()` now flags a
+  body resource the plan needs (named in it, or in the recipe of an item it
+  names) that the agent does not hold and no step gets, and steps written as
+  commands rather than milestones. A flawed draft goes back once with the
+  problems listed; the revision is used if it parses. Live, the revision added
+  the depart to Mars and the `mars_ice` mining. The status line says
+  `(revised after review)`. Generic clauses such as "an electrolyte" are left
+  alone: the game matches ingredients by physics tags.
+- **`GameData::BODY_MINE`** and `GameData::minedOn()`: which body's `mine`
+  yields which resources, transcribed from the engine's `BODY_MINE`. The
+  planner's brief lists it.
+
+### Fixed
+- **Stalls replanned too eagerly and reset progress.** Loop breaks fire on
+  about one turn in five, so a stall replanned every 150 ticks: live, twice in
+  400 ticks, the same goal each time, back to step 1 each time. A stall now
+  replaces a plan only once it has had 450 ticks to work, and a plan handed back
+  unchanged keeps its current step (`🗺️ plan reviewed, unchanged: …`).
+- **Steps merged into one string are split back.** Under the schema the model
+  sometimes closed and reopened its quotes inside one step, so three steps
+  arrived as one.
+
 ## [3.16.0] - 2026-09-25
 
 ### Added
