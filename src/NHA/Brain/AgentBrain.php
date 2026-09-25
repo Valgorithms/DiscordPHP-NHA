@@ -95,7 +95,7 @@ final class AgentBrain
      *
      * Tolerates ```json fences and leading prose; requires a known `verb`.
      *
-     * @return array{verb: string, args: array<string,mixed>, reason: string}|null
+     * @return array{verb: string, args: array<string,mixed>, reason: string, step_done?: true}|null
      */
     public static function parseDecision(string $content): ?array
     {
@@ -126,7 +126,10 @@ final class AgentBrain
 
         $reason = is_string($data['reason'] ?? null) ? trim($data['reason']) : '';
 
-        return ['verb' => $verb, 'args' => $args, 'reason' => $reason];
+        // The model reports its plan step complete ({@see Planner}); only a
+        // literal `true` counts, so "false", "yes" or a stray key advance nothing.
+        return ['verb' => $verb, 'args' => $args, 'reason' => $reason]
+            + (($data['step_done'] ?? null) === true ? ['step_done' => true] : []);
     }
 
     /**

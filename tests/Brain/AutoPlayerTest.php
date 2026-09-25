@@ -6,6 +6,7 @@ use NHA\Brain\AgentBrain;
 use NHA\Brain\AutoPlayer;
 use NHA\Brain\Ladder;
 use NHA\Brain\OllamaClient;
+use NHA\Brain\Planner;
 use NHA\Http\Http;
 use NHA\NHA;
 use NHA\StateStore;
@@ -2924,5 +2925,148 @@ class AutoPlayerTest extends NHAUnitTestCase
             });
 
         self::assertStringContainsString("last turn's `mine` was rejected: nothing to mine here", $line);
+    }
+
+    /**
+     * A planner whose model replies with `$reply`; every request is counted.
+     *
+     * @param list<string> $calls Collects each request body.
+     */
+    private function plannerReplying(string $reply, array &$calls, bool $fail = false): Planner
+    {
+        return new Planner(new OllamaClient('http://x', 'm', function ($m, $u, $h, $payload) use ($reply, &$calls, $fail) {
+            $calls[] = (string) $payload;
+
+            return $fail
+                ? \React\Promise\reject(new \RuntimeException('model offline'))
+                : resolve(json_encode(['message' => ['content' => $reply], 'done' => true]));
+        }));
+    }
+
+    /** A brain that records each user prompt and always answers `$reply`. */
+    private function brainRecording(string $reply, array &$prompts): AgentBrain
+    {
+        return new AgentBrain(new OllamaClient('http://x', 'm', function ($m, $u, $h, $payload) use ($reply, &$prompts) {
+            $prompts[] = (string) (json_decode((string) $payload, true)['messages'][1]['content'] ?? '');
+
+            return resolve(json_encode(['message' => ['content' => $reply], 'done' => true]));
+        }));
+    }
+
+    /**
+     * With no plan, the strategist is asked once the turn's own call is done;
+     * its plan is stored, announced, and shown in the next turn's prompt with
+     * the current step marked.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     * @covers \NHA\Brain\PromptBuilder::build
+     */
+    public function testThePlannerSetsAPlanTheNextTurnWorksToward(): void
+    {
+        $state = new StateStore($this->statePath);
+        $calls = [];
+        $prompts = [];
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+            $this->brainRecording('{"verb":"mine","args":{"n":2}}', $prompts),
+            $state,
+            $this->plannerReplying('{"goal":"found the triton colony","steps":["make a battery","make a thermal_core","fly to triton"],"why":"nobody has"}', $calls),
+        );
+
+        $line = '';
+        $player->step(142287, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertCount(1, $calls, 'asked once');
+        self::assertSame('found the triton colony', $state->plan(142287)['goal']);
+        self::assertStringContainsString('🗺️ new plan: found the triton colony — first: make a battery', $line);
+        self::assertSame('1/3', $player->lastTurn(142287)['plan']);
+
+        $player->step(142287, 'tok');
+        self::assertMatchesRegularExpression('/YOUR PLAN \(set 0 ticks ago\): found the triton colony\n  → 1\. make a battery\n    2\. make a thermal_core/u', $prompts[1]);
+        self::assertStringContainsString('"step_done": true', $prompts[1]);
+        self::assertCount(1, $calls, 'a fresh plan is not asked for again');
+    }
+
+    /**
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAStepTheModelReportsDoneAdvancesThePlan(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->setPlan(142287, 'found triton', ['make a battery', 'make a thermal_core', 'fly to triton'], 'w', 10, 'home');
+        $calls = [];
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+            $this->brainReturning('{"verb":"mine","args":{"n":2},"step_done":true}'),
+            $state,
+            $this->plannerReplying('{}', $calls),
+        );
+
+        $line = '';
+        $player->step(142287, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertSame(1, $state->plan(142287)['step']);
+        self::assertStringContainsString('🗺️ step 1/3 done — next: make a thermal_core', $line);
+        self::assertSame('mine', $this->posts[0][1]['verb'], 'the turn itself goes out as usual');
+        self::assertSame([], $calls, 'a plan in progress is not re-asked');
+    }
+
+    /**
+     * Repeated blocks since the plan was set mean the plan is not working:
+     * ask for a new one. Blocks from before it was set do not count.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAPlanIsRevisedWhenOneProposalKeepsGettingBlocked(): void
+    {
+        $run = function (int $blockedAt): int {
+            @unlink($this->statePath);
+            $state = new StateStore($this->statePath);
+            $state->setPlan(142287, 'g', ['a', 'b'], 'w', 20, 'home');
+            for ($i = 0; $i < 3; $i++) {
+                $state->recordVeto(142287, 'finalize', [], 'no cockpit', $blockedAt);
+            }
+            $calls = [];
+            (new AutoPlayer(
+                $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+                $this->brainReturning('{"verb":"mine","args":{"n":2}}'),
+                $state,
+                $this->plannerReplying('{"goal":"g2","steps":["c"],"why":"w"}', $calls),
+            ))->step(142287, 'tok');
+
+            return count($calls);
+        };
+
+        self::assertSame(1, $run(30), 'blocked three times since the plan was set');
+        self::assertSame(0, $run(10), 'the blocks predate the plan');
+    }
+
+    /**
+     * A planner that fails costs nothing but the plan: the turn goes out, and
+     * the attempt is remembered so the next turn does not ask again at once.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAFailedPlannerCallDoesNotCostTheTurn(): void
+    {
+        $state = new StateStore($this->statePath);
+        $calls = [];
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0]),
+            $this->brainReturning('{"verb":"mine","args":{"n":2}}'),
+            $state,
+            $this->plannerReplying('', $calls, true),
+        );
+
+        $player->step(142287, 'tok');
+        $player->step(142287, 'tok');
+
+        self::assertCount(2, $this->posts, 'both turns went out');
+        self::assertNull($state->plan(142287));
+        self::assertCount(1, $calls, 'not asked again inside the retry gap');
     }
 }

@@ -331,7 +331,7 @@ An agent attempting to travel should verify enough current state to avoid making
 | Shared command service | command semantics and response builders shared by every entry point | `src/NHA/Commands.php` | resolve default agent once, return Promises resolving to `MessageBuilder`, keep entry-point details out |
 | Local state | durable default agent id | `src/NHA/StateStore.php` | tiny JSON-backed scope; no Discord or network concerns |
 | Application wiring | environment, logging, prefix commands, slash commands, buttons, polling, relay, startup | `bot.php` | thin adapters over `Commands`, deferred interactions, dual-ready slash registration, non-blocking polling |
-| Tests and docs | behavioral contract | `tests/*`, `phpunit.xml`, `README.md`, `.env.example`, `.agents/skills/*` | PHPUnit 9, unit/live separation, async helpers, public setup accuracy, current agent guidance |
+| Tests and docs | behavioral contract | `tests/*`, `phpunit.xml`, `README.md`, `env.example`, `.agents/skills/*` | PHPUnit 9, unit/live separation, async helpers, public setup accuracy, current agent guidance |
 
 ## Dependency boundaries
 
@@ -558,7 +558,7 @@ If you touch one of these, inspect the companions too:
 | prefix command registration | equivalent slash dispatch and `Commands` method |
 | slash command definition | slash dispatch, `listenCommand()` callback, interaction response path |
 | component buttons | `AgentObservation::toContainer()`, async update flow, component limits |
-| public setup or environment variables | `README.md`, `.env.example`, `bot.php` |
+| public setup or environment variables | `README.md`, `env.example`, `bot.php` |
 | an NHA API route or verb | `/openapi.json`, `/docs`, `/rules`, endpoint binding, typed wrappers, tests, `nha-agent` skill |
 | NHA gameplay guidance | `.agents/skills/nha-agent/SKILL.md`, upstream NHA `AGENTS.md`, current API/rules |
 | authentication behavior | `StateStore`, NHA HTTP request headers/body, README setup documentation |
@@ -787,7 +787,7 @@ For DiscordPHP builder, interaction, repository, gateway, type-map, or voice int
 ### Docs
 
 - Public class and method behavior should remain accurate in PHPDoc.
-- This repository's long-form public guide is `README.md`; setup variables are mirrored in `.env.example`.
+- This repository's long-form public guide is `README.md`; setup variables are mirrored in `env.example`.
 - Do not invent local `guide/` or `docs/` ownership. Those trees belong to the DiscordPHP dependency, not DiscordPHP-NHA.
 - Keep docs in sync when preferred usage, command coverage, or environment requirements change.
 - Keep `.agents/skills/nha-agent/SKILL.md` in sync when the public NHA agent contract changes.

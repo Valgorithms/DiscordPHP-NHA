@@ -143,15 +143,18 @@ final class AutoPlayer
     private float $knownFetchedAt = 0.0;
 
     /**
-     * @param NHA        $nha   The NHA client used to observe and submit intents.
-     * @param AgentBrain $brain Turns an observation into a `{verb, args, reason}` decision.
-     * @param StateStore $state Durable store; also attached to `$nha` here so a standalone
-     *                          player still records position on every observe.
+     * @param NHA          $nha     The NHA client used to observe and submit intents.
+     * @param AgentBrain   $brain   Turns an observation into a `{verb, args, reason}` decision.
+     * @param StateStore   $state   Durable store; also attached to `$nha` here so a standalone
+     *                              player still records position on every observe.
+     * @param Planner|null $planner Sets the goal the turns work toward; without one the turns
+     *                              run as before, one verb at a time with no plan.
      */
     public function __construct(
         private readonly NHA $nha,
         private readonly AgentBrain $brain,
         private readonly StateStore $state,
+        private readonly ?Planner $planner = null,
     ) {
         // Make the observe() → position write self-sufficient even when this
         // player is used without a Commands layer wiring the store.
@@ -725,6 +728,47 @@ final class AutoPlayer
      * @var array<int,array<string,mixed>>
      */
     private array $lastTurn = [];
+
+    /**
+     * A line about the plan (adopted, a step done, finished) waiting to ride
+     * on the next status line, per agent. The planner answers between turns,
+     * after the turn that asked it has already reported.
+     *
+     * @var array<int,string>
+     */
+    private array $planNews = [];
+
+    /**
+     * Asks the {@see Planner} for a plan when one is due
+     * ({@see StateStore::planDue()}), without waiting for it: the reply is
+     * stored whenever it lands and shown from the next turn on.
+     *
+     * Called once the turn's own model call has returned, so the two never
+     * queue behind each other inside one turn.
+     *
+     * @param array<string,mixed> $context The turn context, shown to the planner as the situation.
+     * @param string              $where   A body name, or `home` ({@see planDue()} replans on a change).
+     */
+    private function kickPlanner(int $agent_id, AgentObservation $observation, array $context, int $tick, string $where, bool $stalled): void
+    {
+        if ($this->planner === null || ! $this->state->planDue($agent_id, $tick, $stalled, $where)) {
+            return;
+        }
+        $this->state->recordPlanAttempt($agent_id, $tick);
+        $context['objectives'] = $this->state->objectives($agent_id);
+
+        $this->planner->plan($observation, $context)->then(
+            function (?array $plan) use ($agent_id, $tick, $where): void {
+                if ($plan === null) {
+                    return;
+                }
+                $this->state->setPlan($agent_id, $plan['goal'], $plan['steps'], $plan['why'], $tick, $where);
+                $this->planNews[$agent_id] = "🗺️ new plan: {$plan['goal']} — first: {$plan['steps'][0]}";
+            },
+            // A failed call waits out the retry gap; turns carry on meanwhile.
+            static function (): void {},
+        );
+    }
 
     /**
      * Where the last {@see step()}'s decision came from, for the runner's log.
@@ -1619,12 +1663,43 @@ final class AutoPlayer
                     . 'from anywhere via invest{body,module,credits}.';
             }
 
+            // The strategist's plan, shown every turn. It is revised when it
+            // is missing, finished, stale, the agent has reached or left a
+            // body, or it has stopped working: loop breaks piling up, a hold
+            // that overran, or one proposal blocked again and again since the
+            // plan was set.
+            $plan = $this->state->plan($agent_id);
+            if ($plan !== null) {
+                $context['plan'] = $plan;
+            }
+            $blockedAgain = array_filter(
+                $context['vetoes'],
+                static fn(array $v): bool => $v['count'] >= 3 && $tick - $v['ago'] > (int) ($plan['set_at'] ?? -1),
+            );
+            $stalled = $loopStreak >= 2 || $holdOverrun > 0 || $blockedAgain !== [];
+            $where = Ladder::atBody($rawObs) ?? 'home';
+            $planKick = fn() => $this->kickPlanner($agent_id, $observation, $context, $tick, $where, $stalled);
+
             $altNow = (int) ($observation->get('altitude') ?? 0);
 
-            return $colonyBoardPromise->then(fn(array $colonyBoard) => $this->brain->decide($observation, $context ?: null, $stance)->then(function (?array $decision) use ($agent_id, $token, $tick, $altNow, $observation, $rawObs, $known, $tried, $dead, $researchPaying, $recent, $loop, $loopObjective, $stance, $holdingForWindow, $departNow, $departServiceable, $departCooldown, $rideCooldown, $departUnreachable, $departSelectSkip, $shipStranded, $inTransit, $noDestinations, $pre, $last, $colonyBoard, $remoteBody) {
+            return $colonyBoardPromise->then(fn(array $colonyBoard) => $this->brain->decide($observation, $context ?: null, $stance)->then(function (?array $decision) use ($agent_id, $token, $tick, $altNow, $observation, $rawObs, $known, $tried, $dead, $researchPaying, $recent, $loop, $loopObjective, $stance, $holdingForWindow, $departNow, $departServiceable, $departCooldown, $rideCooldown, $departUnreachable, $departSelectSkip, $shipStranded, $inTransit, $noDestinations, $pre, $last, $colonyBoard, $remoteBody, $planKick) {
                 // The model's own pick, before any gate or loop break rewrites
                 // it: {@see turnSource()} compares the submission against this.
                 $proposed = $decision === null ? null : ['verb' => (string) $decision['verb'], 'args' => (array) ($decision['args'] ?? [])];
+
+                // The model says its plan step is done. Its judgement stands
+                // even when a gate replaces the verb below: the step is about
+                // the world, not about this turn's action.
+                if (($decision['step_done'] ?? false) === true && ($done = $this->state->advancePlan($agent_id, $tick)) !== null) {
+                    $p = (array) $this->state->plan($agent_id);
+                    $n = count((array) ($p['steps'] ?? []));
+                    $this->planNews[$agent_id] = $done < $n
+                        ? "🗺️ step {$done}/{$n} done — next: {$p['steps'][$done]}"
+                        : '🗺️ plan complete: ' . (string) ($p['goal'] ?? '');
+                }
+                // The turn's own model call has returned, so a plan call now
+                // does not hold this turn up.
+                $planKick();
 
                 if ($decision === null && $loopObjective === null && ! $holdingForWindow) {
                     // Record the pass so a wait-streak is visible to detectLoop.
@@ -2778,12 +2853,14 @@ final class AutoPlayer
                     $this->state->recordVeto($agent_id, $proposed['verb'], $proposed['args'], (string) $decision['reason'], $tick);
                 }
                 $replaced = in_array($source, ['override', 'loop'], true) ? $proposed : null;
+                $plan = $this->state->plan($agent_id);
                 $this->lastTurn[$agent_id] = array_filter([
                     'tick' => $tick,
                     'source' => $source,
                     'verb' => (string) $decision['verb'],
                     'proposed' => $replaced,
                     'latency_ms' => $this->brain->lastLatencyMs(),
+                    'plan' => $plan === null ? null : ($plan['step'] >= count($plan['steps']) ? 'done' : ($plan['step'] + 1) . '/' . count($plan['steps'])),
                 ], static fn($v): bool => $v !== null);
 
                 // `$pre` and `$last` were read below and never captured, so
@@ -2820,7 +2897,10 @@ final class AutoPlayer
                             $prev = "\n⤷ last turn's `" . (string) (($last['verb'] ?? '?')) . '` was rejected: ' . (string) $oc['result'];
                         }
 
-                        return "{$head} **{$decision['verb']}**{$args}{$ref}{$reason}{$prev}";
+                        $news = isset($this->planNews[$agent_id]) ? "\n{$this->planNews[$agent_id]}" : '';
+                        unset($this->planNews[$agent_id]);
+
+                        return "{$head} **{$decision['verb']}**{$args}{$ref}{$reason}{$prev}{$news}";
                     });
             }));
         }));

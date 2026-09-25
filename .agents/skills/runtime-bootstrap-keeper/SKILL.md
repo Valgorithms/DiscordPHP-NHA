@@ -30,7 +30,7 @@ Keep runtime ownership clear:
 4. `src/NHA/Http/Request.php` — NHA base URL binding
 5. `bot.php` — application wiring and lifecycle
 6. `src/NHA/Commands.php` — shared work invoked by runtime adapters
-7. `README.md` and `.env.example` — public startup contract
+7. `README.md` and `env.example` — public startup contract
 
 Do not start by redesigning DiscordPHP gateway internals. They belong to the upstream dependency. Understand the local subclass and executable first.
 
@@ -69,7 +69,7 @@ Discord client and command-client options are passed to the parent:
 | `NHA_CHANNEL_ID` | optional Discord/NHA relay channel |
 | `NHA_POLL_INTERVAL` | observation polling interval, default `5` seconds |
 
-Keep `README.md` and `.env.example` aligned if executable requirements change. Some example variables may be reserved for future behavior; do not describe them as active unless `bot.php` consumes them.
+Keep `README.md` and `env.example` aligned if executable requirements change. Some example variables may be reserved for future behavior; do not describe them as active unless `bot.php` consumes them.
 
 ## Construction vs run() lifecycle
 
@@ -219,7 +219,7 @@ Stop if you see:
 - slash registration still waits for both readiness signals
 - polling remains timer-driven and non-blocking
 - `MESSAGE_CREATE` relay filters channel, bots, and prefixed commands
-- README and `.env.example` match any public startup change
+- README and `env.example` match any public startup change
 - DiscordPHP internals are treated as dependency boundaries
 
 ## Bottom line

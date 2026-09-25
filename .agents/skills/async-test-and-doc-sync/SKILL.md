@@ -8,7 +8,7 @@ description: >-
 
 # Skill: async-test-and-doc-sync
 
-Use this skill when adding or changing public behavior, writing or reviewing tests, updating PHPDoc, changing command coverage, or touching setup behavior that `README.md` or `.env.example` describes.
+Use this skill when adding or changing public behavior, writing or reviewing tests, updating PHPDoc, changing command coverage, or touching setup behavior that `README.md` or `env.example` describes.
 
 This is alignment skill. Load it when the question is not only "does the code work?" but "do tests prove it and do docs describe it?"
 
@@ -31,7 +31,7 @@ Keep tests, PHPDoc, and repository documentation synchronized with public behavi
 - async tests use the shared ReactPHP wait bridges
 - every unit test extends `NHATestCase`
 - PHPDoc describes local public APIs accurately
-- `README.md` and `.env.example` reflect the executable users actually run
+- `README.md` and `env.example` reflect the executable users actually run
 
 ## Read in this order
 
@@ -47,7 +47,7 @@ Keep tests, PHPDoc, and repository documentation synchronized with public behavi
    - `tests/HelperTraitTest.php`
    - `tests/Http/EndpointTest.php`
    - `tests/StateStoreTest.php`
-8. `README.md` and `.env.example`
+8. `README.md` and `env.example`
 
 ## Core contract
 
@@ -247,13 +247,13 @@ Describes:
 - setup and startup
 - default-agent registration flow
 
-### `.env.example`
+### `env.example`
 
 Lists executable configuration. Keep descriptions accurate to `bot.php`. If a variable is not consumed, do not claim active behavior for it.
 
 ### No local docs tree
 
-Do not refer to `guide/` or `docs/` as local documentation surfaces. Those may exist in the installed DiscordPHP dependency, but DiscordPHP-NHA's owned public docs are currently `README.md`, `.env.example`, and PHPDoc.
+Do not refer to `guide/` or `docs/` as local documentation surfaces. Those may exist in the installed DiscordPHP dependency, but DiscordPHP-NHA's owned public docs are currently `README.md`, `env.example`, and PHPDoc.
 
 ## When docs must change
 
@@ -370,7 +370,7 @@ Stop if you see:
 - [ ] Public methods and model behavior have accurate PHPDoc
 - [ ] `AgentObservation` remains documented as a plain model
 - [ ] README updated if public command/setup behavior changed
-- [ ] `.env.example` updated if executable configuration changed
+- [ ] `env.example` updated if executable configuration changed
 - [ ] `composer unit` passes
 - [ ] `composer cs` and `composer pint` are used as the available style commands
 - [ ] No upstream-only DiscordPHP layer is presented as local ownership

@@ -19,14 +19,16 @@ use NHA\State\CombineMemoryTrait;
 use NHA\State\DecisionLogTrait;
 use NHA\State\IdentityStateTrait;
 use NHA\State\LoopStrategyStateTrait;
+use NHA\State\PlanStateTrait;
 use NHA\State\PositionStateTrait;
 
 /**
  * Tiny JSON-file backed store for data that must survive a bot restart: the
  * default agent id + token, the per-Discord-user identity map, each agent's
  * last-known world position, the autoplay flag + driver lease, the brain's
- * decision log, its `combine` / loop-guard / stance memory, and the registered
- * slash-command signatures. Volatile per-tick world state (market, scene, feed,
+ * decision log, its `combine` / loop-guard / stance memory, the strategist's
+ * plan, and the registered slash-command signatures. Volatile per-tick world
+ * state (market, scene, feed,
  * …) is deliberately NOT stored here — it is re-fetched live every time. Writes
  * are atomic (temp file + rename).
  *
@@ -46,6 +48,7 @@ class StateStore
     use DecisionLogTrait;
     use IdentityStateTrait;
     use LoopStrategyStateTrait;
+    use PlanStateTrait;
     use PositionStateTrait;
 
     protected array $data;

@@ -9,7 +9,7 @@
 /.gitignore        export-ignore
 /.php-cs-fixer.dist.php export-ignore
 /phpunit.xml       export-ignore
-/.env.example      export-ignore
+/env.example       export-ignore
 /AGENTS.md         export-ignore
 /run-autoplay.sh   export-ignore
 /run-autoplay.bat  export-ignore

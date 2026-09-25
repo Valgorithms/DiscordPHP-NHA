@@ -271,8 +271,16 @@ final class Playbook
             - `construct shape=station` when not `in_space`; `depart` with no fueled ion-thruster ship or a closed window.
             - `move` with no target in mind, or toward a resource you already have plenty of.
 
+            YOUR PLAN
+            - When the situation shows YOUR PLAN, a strategist who sees the whole board set it. Spend your turn on its
+              → step unless a safety rule above forbids that, or the step is impossible right now (then do the most
+              useful thing toward it).
+            - When your observation shows the → step is complete (the item is in your Inventory, you are where it
+              says), add "step_done": true. Never claim a step you cannot see done.
+
             OUTPUT — reply with ONE JSON object and nothing else:
             {"verb":"<verb>","args":{ ... },"reason":"<one short clause>"}
+            (plus "step_done": true only when the current plan step is complete)
             "verb" must be from the list; "args" must match its hint (use {} when it takes none).
 
             VERBS

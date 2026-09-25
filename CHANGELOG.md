@@ -6,6 +6,27 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-09-25
+
+### Added
+- **A strategist (`Brain\Planner`).** The turn model picks one verb a turn and
+  remembers nothing between turns; 81% of its turns were `mine` or `move`,
+  because the way forward was a chain no rule encodes (fly to Mars, mine
+  `mars_ice`, make a battery and a `thermal_core`, fly to Triton, found the
+  colony). A second, rarer call to the same model now sets one goal and 2–6
+  checkable steps, schema-enforced. The plan is stored (`PlanStateTrait`) and
+  shown in every turn prompt with the current step marked; the turn model adds
+  `"step_done": true` when that step is visibly complete. It is revised when
+  missing, finished, 1,200 ticks old, the agent reaches or leaves a body, or it
+  stalls (repeated loop breaks, an overrun hold, one proposal blocked three
+  times since it was set), never within 150 ticks of the last ask. The call
+  runs after the turn's own and is not awaited. Plan changes ride on the status
+  line (`🗺️ new plan: …`, `🗺️ step 1/3 done — next: …`) and the turn record
+  gains `plan` (`2/4` or `done`). `NHA_PLANNER=0` turns it off.
+- **`env.example`** documents every variable `bot.php` and `autoplay.php` read,
+  with comments on their own lines (neither `.env` loader strips a trailing
+  `# comment`). The README, `.gitattributes` and agent guides point to it.
+
 ## [3.15.0] - 2026-09-25
 
 ### Added

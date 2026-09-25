@@ -432,6 +432,13 @@ final class PromptBuilder
                 . '(aluminium + carbon) — you cannot build one yet, so do not keep trying.';
         }
 
+        // The strategist's plan, just ahead of the ladder's suggestion: the
+        // goal first, then the tactical default. Without it the model was
+        // asked for one verb with no idea what the verb was for.
+        if (is_array($lastDecision['plan'] ?? null)) {
+            $lines = array_merge($lines, self::planLines($lastDecision['plan'], (int) ($tick ?? 0)));
+        }
+
         // With the ladder's real stance and skip list. Without them this ran as
         // `homestead` with an empty skip list — a different agent than the one
         // actually deciding — so the line the model is told to follow "unless
@@ -445,9 +452,40 @@ final class PromptBuilder
             );
         }
 
-        $lines[] = 'Choose one action. Reply with JSON only.';
+        $lines[] = (string) ($lastDecision['closing'] ?? 'Choose one action. Reply with JSON only.');
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * The plan block: the goal, each step marked done (✓), current (→) or to
+     * come, and how to report the current step finished.
+     *
+     * @param array{goal?: string, steps?: list<string>, step?: int, set_at?: int} $plan
+     *
+     * @return list<string>
+     *
+     * @since 3.16.0
+     */
+    private static function planLines(array $plan, int $tick): array
+    {
+        $steps = array_values(array_filter((array) ($plan['steps'] ?? []), 'is_string'));
+        $goal = (string) ($plan['goal'] ?? '');
+        if ($goal === '' || $steps === []) {
+            return [];
+        }
+        $at = (int) ($plan['step'] ?? 0);
+        $age = $tick > 0 && isset($plan['set_at']) ? max(0, $tick - (int) $plan['set_at']) : null;
+
+        $lines = ['YOUR PLAN' . ($age === null ? '' : " (set {$age} ticks ago)") . ": {$goal}"];
+        foreach ($steps as $i => $step) {
+            $lines[] = sprintf('  %s %d. %s', $i < $at ? '✓' : ($i === $at ? '→' : ' '), $i + 1, $step);
+        }
+        $lines[] = $at < count($steps)
+            ? 'Work toward the → step. When your observation shows it is complete, add "step_done": true to your reply.'
+            : 'Every step is done; a new plan is on its way. Until then, keep the agent productive.';
+
+        return $lines;
     }
 
     /**

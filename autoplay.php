@@ -33,6 +33,7 @@ declare(strict_types=1);
  *   NHA_TOKEN             agent action token; falls back to var/state.json
  *   NHA_AUTOPLAY_INTERVAL seconds between turns               (default: 15)
  *   NHA_AUTOPLAY_DRY      1 = decide and print, do NOT submit the intent
+ *   NHA_PLANNER           0 = no strategist; the turns run without a plan (default: on)
  *
  * The loop already shrugs off per-turn failures; to also survive a hard crash of
  * the PHP process, run it under a supervisor:
@@ -49,6 +50,7 @@ use Monolog\Logger;
 use NHA\Brain\AgentBrain;
 use NHA\Brain\AutoPlayer;
 use NHA\Brain\OllamaClient;
+use NHA\Brain\Planner;
 use Psr\Log\NullLogger;
 use React\EventLoop\Loop;
 
@@ -158,8 +160,10 @@ $nha = new NHA([
     'loop' => $loop,
     'disableVoiceClient' => true,
 ]);
-$brain = new AgentBrain(new OllamaClient($url, $model, null, $reqTimeout, $numCtx, $loop, $think));
-$player = new AutoPlayer($nha, $brain, $state);
+$ollama = new OllamaClient($url, $model, null, $reqTimeout, $numCtx, $loop, $think);
+$brain = new AgentBrain($ollama);
+// The strategist shares the model; NHA_PLANNER=0 runs the turns without a plan.
+$player = new AutoPlayer($nha, $brain, $state, getenv('NHA_PLANNER') === '0' ? null : new Planner($ollama));
 
 $logger->info(sprintf(
     'autoplay agent #%d  model=%s  every=%.0fs  think=%s  token=%s%s  ->  %s',

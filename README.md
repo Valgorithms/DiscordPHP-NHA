@@ -49,7 +49,7 @@ A DiscordPHP extension + bot for the [NHA agent sandbox](https://nha.recluse.lol
 
 ```
 composer install
-cp .env.example .env   # fill in TOKEN and NHA_CHANNEL_ID
+cp env.example .env    # fill in TOKEN and NHA_CHANNEL_ID
 php bot.php
 ```
 
@@ -91,6 +91,7 @@ OLLAMA_TIMEOUT=120                        # per-request seconds (default 120)
 OLLAMA_THINK=0                            # native mode only: 0 disables a thinking model's reasoning pass; unset = model default
 NHA_AUTOPLAY=0                            # optional: boot with the loop paused (default: on whenever OLLAMA_URL is set)
 NHA_AUTOPLAY_INTERVAL=60                  # seconds between turns (default 15; raise it for a slow local model)
+NHA_PLANNER=0                             # optional: turn off the strategist (default: on — see below)
 ```
 
 - `!nha think` / `/nha think` — run one turn now (observe → ask the model → queue the intent), and print the reasoning.
@@ -118,3 +119,10 @@ Each turn sends the model a compact digest of the observation and requires a JSO
 `{"verb": "...", "args": {...}, "reason": "..."}`; the verb is validated against `AgentBrain::VERBS`, a
 downed agent is skipped, and `wait` (or anything unparseable) is a no-op. A queued intent is only *queued* —
 its `queued_intent` id is saved so the outcome can be polled.
+
+A second, rarer call — the **strategist** (`Brain\Planner`) — sets one goal and 2–6 ordered steps, stored
+in `var/state.json` and shown in every turn prompt with the current step marked. The turn model adds
+`"step_done": true` when its observation shows that step complete. The plan is revised when it is missing,
+finished, about 40 minutes old, the agent reaches or leaves a body, or it stops working (repeated loop
+breaks, an overrun hold, one proposal blocked again and again). It is asked after the turn's own model call,
+so it never holds a turn up; `NHA_PLANNER=0` turns it off.

@@ -42,13 +42,14 @@ flowchart TD
     downed -- no --> stance["Stance::pick &#8594; aggressive &#40;defend&#41; / quartermaster &#8594; researcher &#8594; expansionist<br/>&#40;the resupply chain, then the mission; persisted&#41;"]
     stance --> combat{Ladder::defensiveAction<br/>&#40;recent attack / robber / hostile closing while hurt&#41;?}
     combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#8594; submit &amp; record, skip the brain entirely"]]
-    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;"]
+    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;<br/>&#8226; plan &#40;the strategist's goal + steps, current step marked&#41;"]
     ctx --> detect["detectLoop recent<br/>&#40;a 'stuck land/launch' bypasses the cooldown&#41;"]
     detect --> isloop{loop found &amp;<br/>not in cooldown?}
     isloop -- yes --> peek["state.peekNextForcedObjective<br/>&#40;name it for the prompt; do NOT commit yet&#41;"]
     peek --> decide
     isloop -- no --> decide[["brain.decide observation, context, stance"]]
-    decide --> waited{decision == null<br/>AND no forced objective?}
+    decide --> plan["step_done &#8594; state.advancePlan<br/>planDue &#8594; Planner::plan &#40;not awaited; stored when it lands&#41;"]
+    plan --> waited{decision == null<br/>AND no forced objective?}
     waited -- yes --> recW["record a 'wait'<br/>&#40;visible to detectLoop&#41;"] --> done
     waited -- no --> forced{forced objective<br/>this turn?}
     forced -- yes --> commit["state.bumpForcedObjective<br/>&#40;commit the rotation — brain call succeeded&#41;"]
@@ -101,8 +102,25 @@ carries it. `turnSource()` compares the submission with the model's own pick; an
 and shown in the next prompts under "BLOCKED before reaching the game" for 600
 ticks. The "Last turn" line says "you proposed X, but a safety check replaced it
 with Y" instead of crediting Y to the model. The runner logs each turn's record
-(`tick`, `source`, `verb`, `proposed`, `latency_ms`) as the log line's JSON
-context.
+(`tick`, `source`, `verb`, `proposed`, `latency_ms`, `plan`) as the log line's
+JSON context.
+
+**The strategist** ([`Planner`](../src/NHA/Brain/Planner.php) + [`PlanStateTrait`](../src/NHA/State/PlanStateTrait.php)).
+The turn model picks one verb a turn and remembers nothing between turns, so a
+chain no rule encodes (fly to Mars, mine `mars_ice`, make a battery and a
+`thermal_core`, fly to Triton, found the colony) had nothing to hold it. The
+planner is a second, rarer call to the same model: it sees the turn digest plus
+the world's objective board and returns one goal and 2–6 checkable steps
+(schema-enforced). The plan sits in `state.json` and is shown in every turn
+prompt, just ahead of the SUGGESTED line, with the current step marked `→`; the
+turn model adds `"step_done": true` when its observation shows that step done
+(at most one advance per 20 ticks). `planDue()` asks again when there is no
+plan, it is finished or 1,200 ticks old, the agent has reached or left a body,
+or it has stalled: two or more loop breaks in a row, an overrun hold, or one
+proposal blocked three times since the plan was set. Never within 150 ticks of
+the last ask, answered or not. The call is made after the turn's own model call
+returns and is not awaited, so it never holds a turn up; `NHA_PLANNER=0` turns
+it off.
 
 **Colony board** (`GET /colony/{body}` + `Ladder::colonyFundStep()`). On a body
 surface the mission is to finish that body's co-op colony. The board carries

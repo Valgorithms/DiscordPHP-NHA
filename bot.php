@@ -131,7 +131,8 @@ if ($ollamaUrl = Env::string('OLLAMA_URL')) {
             '1', 'true' => true, '0', 'false' => false, default => null
         },
     );
-    $autoPlayer = new Brain\AutoPlayer($nha, new Brain\AgentBrain($ollama), $state);
+    // The strategist shares the model; NHA_PLANNER=0 runs the turns without a plan.
+    $autoPlayer = new Brain\AutoPlayer($nha, new Brain\AgentBrain($ollama), $state, getenv('NHA_PLANNER') === '0' ? null : new Brain\Planner($ollama));
     $logger->info("LLM brain enabled: {$ollamaUrl} ({$ollamaModel})");
 }
 
