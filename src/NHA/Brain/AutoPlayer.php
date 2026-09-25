@@ -717,10 +717,32 @@ final class AutoPlayer
      *
      * @return array{verb: string, args: array<string, mixed>, reason: string}|null
      */
-    private function fallbackDecision(AgentObservation $observation, string $reasonLead, array $tried, array $known, bool $researchPaying, string $stance = 'homestead', array $departUnreachable = []): ?array
+    /**
+     * This turn's bookkeeping hints (`_colony_done`, `_fuel_goal`,
+     * `_board_wants`, `_combine_lore`), per agent. {@see step()} injects them
+     * into its view of the world; the fallback and loop-break paths rebuilt a
+     * BARE view from the observation and handed that to the ladder instead.
+     * Without `_colony_done` the ladder believed there was still somewhere to
+     * fly, so "gear up a flyer" won — and the no-second-hull guard, whose own
+     * fallback came back as another `build`, let the model's ship-building
+     * through. The loop-break path alone ran 279 times in 8 hours.
+     *
+     * @var array<int,array<string,mixed>>
+     */
+    private array $turnHints = [];
+
+    /** A bare view of the world, with this turn's hints merged back in. */
+    private function withHints(AgentObservation $observation): array
     {
         $raw = json_decode(json_encode($observation->jsonSerialize()), true);
         $raw = is_array($raw) ? $raw : [];
+
+        return $raw + ($this->turnHints[$observation->agentId] ?? []);
+    }
+
+    private function fallbackDecision(AgentObservation $observation, string $reasonLead, array $tried, array $known, bool $researchPaying, string $stance = 'homestead', array $departUnreachable = []): ?array
+    {
+        $raw = $this->withHints($observation);
 
         $exhausted = $known;
         foreach ($tried as $sig) {
@@ -773,8 +795,7 @@ final class AutoPlayer
      */
     private function loopBreakDecision(string $objective, AgentObservation $observation, array $known, array $tried, array $dead, int $tick): array
     {
-        $raw = json_decode(json_encode($observation->jsonSerialize()), true);
-        $raw = is_array($raw) ? $raw : [];
+        $raw = $this->withHints($observation);
         $inv = (array) ($raw['inventory'] ?? []);
         $pos = (array) ($raw['position'] ?? [0, 0]);
         $x = (int) ($pos[0] ?? 0);
@@ -827,8 +848,7 @@ final class AutoPlayer
             if ($offGround) {
                 return ['verb' => 'land', 'args' => [], 'reason' => "{$lead}: land so you can build"];
             }
-            $raw = json_decode(json_encode($observation->jsonSerialize()), true);
-            $raw = is_array($raw) ? $raw : [];
+            $raw = $this->withHints($observation);
             if (Ladder::cellOccupied($raw)) {
                 $step = Ladder::stepToClearGround($raw);
 
@@ -1208,6 +1228,13 @@ final class AutoPlayer
                     $rawObs['_combine_lore'] = $lore;
                 }
             }
+            // Remember this turn's hints, so every OTHER view of the world this
+            // turn builds for the ladder carries them too (see withHints()).
+            $this->turnHints[$agent_id] = array_filter(
+                $rawObs,
+                static fn($k): bool => is_string($k) && str_starts_with($k, '_'),
+                ARRAY_FILTER_USE_KEY,
+            );
 
             // At a body (surface OR its orbit) — or latched as heading home from
             // one — pull that body's colony board so the decision can FUND the
@@ -2177,11 +2204,22 @@ final class AutoPlayer
                 // A `build` of ship parts once a depart-capable ship already
                 // exists is a wasted turn on a second hull. Swap it for the
                 // fallback (finalize a ready flyer / earn / hold).
+                // Also when there is nowhere left worth flying to: then the
+                // obstacle is gear or founding, never the hull, and a second
+                // hull is pure waste — but that state reads as "no capable
+                // ship", which is exactly when this guard used to stand aside.
                 if ($verb === 'build'
                     && $stance === Stance::Expansionist->value
-                    && Ladder::hasDepartCapableShip($rawObs, $departUnreachable)
+                    && (Ladder::hasDepartCapableShip($rawObs, $departUnreachable)
+                        || ($noDestinations && Ladder::hasOrbitalShip($rawObs)))
                 ) {
                     $alt = $this->fallbackDecision($observation, 'you already have a flying ship — do not build a second', $tried, $known, $researchPaying, $stance, $departSelectSkip);
+                    // When the fallback offers nothing but another `build`, the
+                    // model's build used to STAND — and the part-cap gate below
+                    // then walked it through the whole flyer bundle.
+                    if ($alt === null || ($alt['verb'] ?? '') === 'build') {
+                        $alt = $this->earnStep($rawObs, (array) $observation->getInventory(), 'you already have a flying ship — do not build a second', $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'build');
+                    }
                     if ($alt !== null && ($alt['verb'] ?? '') !== 'build') {
                         $decision = $alt;
                         $verb = (string) ($decision['verb'] ?? '');

@@ -2703,6 +2703,33 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Live for 8 hours: the model "building the flyer bundle to reach orbit" —
+     * a second hull, when it already owns a flying ship and the obstacle is a
+     * thermal_core. The no-second-hull guard's fallback came back as another
+     * `build` (the ladder, handed a view without `_colony_done`, thought there
+     * was still somewhere to fly), so the model's build stood, and the
+     * part-cap gate walked it through the bundle one part at a time.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testNoSecondHullIsBuiltWhenThereIsNowhereLeftToFly(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']); // only Triton left, and it needs a thermal_core
+
+        $grounded = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false,
+            'loose_parts' => ['frame'],
+            // Everything the flyer's upgrade crafts need is already in hand, as
+            // it was live — so the ladder's gear-up path skips straight to
+            // "build the next part", and the old guard's fallback was a build.
+            'inventory' => ['metal' => 300, 'crystal' => 1082, 'chip' => 10, 'composite' => 20,
+                'bearing' => 10, 'wire' => 20, 'ion_thruster' => 3, 'engine' => 10]]);
+        (new AutoPlayer($this->nhaWith($grounded), $this->brainReturning('{"verb":"build","args":{"part":"cockpit"}}'), $state))->step(142285, 'tok');
+
+        self::assertNotSame('build', $this->posts[0][1]['verb'], 'a hull is not what stands between it and Triton');
+    }
+
+    /**
      * The `build` gate checked the part's base cost and never its `with:`
      * upgrade item, which the engine bills too — so `build jet with
      * ion_thruster` went out with no thruster in hold: "insufficient for jet

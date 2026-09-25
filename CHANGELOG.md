@@ -6,6 +6,25 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.14.4] - 2026-09-25
+
+### Fixed
+- **The fallback and loop-break paths decided without this turn's hints.**
+  `step()` injects `_colony_done`, `_fuel_goal`, `_board_wants` and
+  `_combine_lore` into its view of the world, but `fallbackDecision()` and
+  `loopBreakDecision()` rebuilt a bare view from the observation and handed THAT
+  to the ladder. Without `_colony_done` the ladder believed there was still
+  somewhere to fly, so its gear-up path won. The loop-break path alone ran 279
+  times in 8 hours. Both now merge the turn's hints (`withHints()`).
+- **A second hull was being built.** For 8 hours the model was "building the
+  flyer bundle to reach orbit" while owning a flying ship, with a
+  `thermal_core` — not a hull — standing between it and Triton. The
+  no-second-hull guard kept the model's `build` whenever its own fallback came
+  back as another build, and the part-cap gate then walked it through the
+  bundle one part at a time. It now falls through to `earnStep()` instead, and
+  it also fires when there is nowhere left worth flying — the one state that
+  reads as "no capable ship", where it used to stand aside.
+
 ## [3.14.3] - 2026-09-25
 
 ### Fixed
