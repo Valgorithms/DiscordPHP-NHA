@@ -387,7 +387,7 @@ final class Ladder
         }
 
         // 3. Build for RELIABLE points — a `construct` tower costs metal (= size)
-        //    plus `composite` (= ceil(height/14)); `composite` is aluminium+carbon.
+        //    plus `composite` (= ceil(height/14)); `composite` is aluminum+carbon.
         //    Skipped while the expansionist stance is gearing a ship on the
         //    ground: the mission is the Accord, not a field of spires. A ship
         //    already in hand (ion_thruster + fuel) means gearing is done, so a
@@ -508,7 +508,7 @@ final class Ladder
         }
 
         // 3b. Spend the credit pile toward a tower: buy the metal, then buy
-        //     aluminium + carbon and combine them into `composite`. Skipped for
+        //     aluminum + carbon and combine them into `composite`. Skipped for
         //     a shipless expansionist — its credits and raws go to the mission
         //     (research / the flight kit), not a field of spires.
         if ($onGround && $credits >= self::CREDIT_FLOOR && ! $gearingShip && ! $towerFuelShort) {
@@ -517,13 +517,13 @@ final class Ladder
             }
             if ($has('composite') < 2 && $has('metal') >= 8) {
                 if ($has('aluminum') < 2) {
-                    return ['verb' => 'buy', 'args' => ['resource' => 'aluminum', 'n' => 3], 'why' => 'buying aluminium for composite (aluminium + carbon)'];
+                    return ['verb' => 'buy', 'args' => ['resource' => 'aluminum', 'n' => 3], 'why' => 'buying aluminum for composite (aluminum + carbon)'];
                 }
                 if ($has('carbon') < 2) {
-                    return ['verb' => 'buy', 'args' => ['resource' => 'carbon', 'n' => 3], 'why' => 'buying carbon for composite (aluminium + carbon)'];
+                    return ['verb' => 'buy', 'args' => ['resource' => 'carbon', 'n' => 3], 'why' => 'buying carbon for composite (aluminum + carbon)'];
                 }
 
-                return ['verb' => 'combine', 'args' => ['ingredients' => ['aluminum' => 1, 'carbon' => 1]], 'why' => 'combining aluminium + carbon into composite for a tower'];
+                return ['verb' => 'combine', 'args' => ['ingredients' => ['aluminum' => 1, 'carbon' => 1]], 'why' => 'combining aluminum + carbon into composite for a tower'];
             }
         }
 
@@ -1493,7 +1493,7 @@ final class Ladder
         $c = static fn(array $ing, string $why): array => ['verb' => 'combine', 'args' => ['ingredients' => $ing], 'why' => $why];
         $buy = static fn(string $r, int $n, string $why): array => ['verb' => 'buy', 'args' => ['resource' => $r, 'n' => $n], 'why' => $why];
 
-        // wire — a conductor for chips / motors (draw copper or aluminium).
+        // wire — a conductor for chips / motors (draw copper or aluminum).
         if ($has('wire') < 4) {
             if ($has('copper') > 0) {
                 return $c(['copper' => 1], 'ship — draw wire from copper (for chips)');
@@ -1502,10 +1502,10 @@ final class Ladder
                 return $buy('copper', 6, 'ship — buy copper to draw wire');
             }
         }
-        // composite (aluminium + carbon) — the LIGHT frame + wing upgrade.
+        // composite (aluminum + carbon) — the LIGHT frame + wing upgrade.
         if ($has('composite') < 5) {
             if ($has('aluminum') > 0 && $has('carbon') > 0) {
-                return $c(['aluminum' => 1, 'carbon' => 1], 'ship — combine composite (aluminium + carbon) for a light frame/wings');
+                return $c(['aluminum' => 1, 'carbon' => 1], 'ship — combine composite (aluminum + carbon) for a light frame/wings');
             }
             if ($credits >= 60) {
                 return $buy($has('aluminum') <= 0 ? 'aluminum' : 'carbon', 6, 'ship — buy composite feedstock');

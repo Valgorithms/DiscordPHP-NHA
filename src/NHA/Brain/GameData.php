@@ -204,7 +204,7 @@ final class GameData
     public const CRAFT = [
         'wire' => 'a ductile conductor metal (copper / aluminum), drawn',
         'chip' => 'silicon (semiconductor) + wire/copper (conductor)',
-        'composite' => 'a light metal (aluminium) + carbon',
+        'composite' => 'a light metal (aluminum) + carbon',
         'bearing' => 'a metal + oil (lubricant)',
         'steel' => 'iron + carbon, smelted with heat',
         'alloy' => '2 metals melted with heat (no electrolyte)',

@@ -151,7 +151,7 @@ final class Playbook
                not part count: finalize_stats says flies = has `cockpit` AND wing_area·v_air² ≥ 10·mass, with
                v_air driven by thrust = Σ jet.thrust + (Σ propeller.thrust_pp)·(Σ engine.power) over drag =
                mass/20. Propellers multiply engine power, so a LIGHT bundle wins; an engine stack just adds mass.
-               • Craft the upgrade items: `wire` (draw copper), `composite` (aluminium+carbon), `chip`
+               • Craft the upgrade items: `wire` (draw copper), `composite` (aluminum+carbon), `chip`
                  (silicon+wire), `bearing` (metal+oil), `ion_thruster` (buy, or combine helium3+motor+chip).
                • Build the bundle: frame `with:{composite:1}` · cockpit `with:{chip:1}` (MANDATORY) · jet
                  `with:{ion_thruster:1}` · engine ×3 · propeller ×2 `with:{bearing:1}` · wing ×3
@@ -189,7 +189,7 @@ final class Playbook
             5. GEAR FOR DEPARTURE — grounded, `vehicles` empty. Flight is power-to-mass, not part count: a LIGHT
                ~14-part flyer beats an engine stack. One step per turn, in this order:
                • CRAFT THE UPGRADE ITEMS the parts need: `wire` (draw `copper`, or buy copper), `composite`
-                 (`combine aluminium+carbon`, or buy the feedstock), `chip` (`combine silicon+wire`), `bearing`
+                 (`combine aluminum+carbon`, or buy the feedstock), `chip` (`combine silicon+wire`), `bearing`
                  (`combine metal+oil`), `ion_thruster` (buy from depot if credits ≳ 200, else
                  `combine helium3+motor+chip`).
                • BUILD the bundle, one part per turn, each with its upgrade item:

@@ -42,6 +42,24 @@ final class RejectionClassifier
     ];
 
     /**
+     * Whether a rejection reason means "try again later" rather than "this
+     * will not work" — the same test {@see classify()} applies first.
+     *
+     * @since 3.18.0
+     */
+    public static function isTransient(string $result): bool
+    {
+        $why = strtolower(trim($result));
+        foreach (self::TRANSIENT as $t) {
+            if (str_contains($why, $t)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param array<string,mixed> $args   the intent's args (`dest`, `module`, `part`, …)
      * @param string              $result the engine's rejection string
      *
@@ -51,13 +69,8 @@ final class RejectionClassifier
     {
         $verb = strtolower(trim($verb));
         $why = strtolower(trim($result));
-        if ($why === '') {
+        if ($why === '' || self::isTransient($why)) {
             return null;
-        }
-        foreach (self::TRANSIENT as $t) {
-            if (str_contains($why, $t)) {
-                return null;
-            }
         }
 
         $entry = static fn(string $key, string $class, string $item = ''): array => [

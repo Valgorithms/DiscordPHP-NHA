@@ -103,4 +103,14 @@ class RejectionClassifierTest extends NHAUnitTestCase
         $this->assertNull(RejectionClassifier::classify('depart', ['dest' => 'deimos'], 'the navigation computer hiccuped'));
         $this->assertNull(RejectionClassifier::classify('depart', ['dest' => 'earth'], 'you are already home'));
     }
+
+    /**
+     * @covers \NHA\Brain\RejectionClassifier::isTransient
+     */
+    public function testATryAgainLaterReasonIsTransientAndARefusalIsNot(): void
+    {
+        $this->assertTrue(RejectionClassifier::isTransient('Not enough crystal to combine'));
+        $this->assertTrue(RejectionClassifier::isTransient('the Mars launch window is CLOSED'));
+        $this->assertFalse(RejectionClassifier::isTransient("depot doesn't trade aluminium"));
+    }
 }

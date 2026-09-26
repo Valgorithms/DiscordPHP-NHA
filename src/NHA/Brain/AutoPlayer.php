@@ -803,6 +803,52 @@ final class AutoPlayer
     }
 
     /**
+     * Spellings the model uses that the game does not. Live, `aluminium`
+     * (copied from our own prompt text) was bought six times in a row —
+     * "depot doesn't trade aluminium" — and the shortage gate, finding 0
+     * `aluminium` beside 4 `aluminum`, turned a composite `combine` into
+     * another such buy.
+     *
+     * @since 3.18.0
+     */
+    private const RESOURCE_ALIASES = ['aluminium' => 'aluminum', 'sulphur' => 'sulfur'];
+
+    /**
+     * The model's args with {@see RESOURCE_ALIASES} mapped to the game's
+     * spelling: `resource`, the `ingredients` bundle, and `with`.
+     *
+     * @param array<string,mixed> $args
+     *
+     * @return array<string,mixed>
+     *
+     * @since 3.18.0
+     */
+    private static function canonicalArgs(array $args): array
+    {
+        $fix = static fn(mixed $name): mixed => is_string($name) ? (self::RESOURCE_ALIASES[strtolower($name)] ?? $name) : $name;
+        if (isset($args['resource'])) {
+            $args['resource'] = $fix($args['resource']);
+        }
+        foreach (['ingredients', 'with'] as $bundle) {
+            if (is_string($args[$bundle] ?? null)) {
+                $args[$bundle] = $fix($args[$bundle]);
+            } elseif (is_array($args[$bundle] ?? null)) {
+                $out = [];
+                foreach ($args[$bundle] as $k => $v) {
+                    if (is_int($k)) {
+                        $out[] = $fix($v);
+                    } else {
+                        $out[(string) $fix($k)] = $v;
+                    }
+                }
+                $args[$bundle] = $out;
+            }
+        }
+
+        return $args;
+    }
+
+    /**
      * Who picked this turn's verb — see {@see lastTurn()}.
      *
      * @param array{verb: string, args: array}|null $proposed The model's own pick, before any gate.
@@ -1435,6 +1481,15 @@ final class AutoPlayer
 
             $researchPaying = $this->state->noteInventorPoints($agent_id, (int) ($observation->get('inventor_points') ?? 0));
 
+            // Last turn's intent came back refused: remember exactly what was
+            // refused, so an identical resubmission is caught before it goes
+            // out (the gate just before submission).
+            $oc = (array) ($pre['outcome'] ?? []);
+            if (($oc['status'] ?? '') === 'rejected' && (string) ($last['verb'] ?? '') !== '') {
+                $refusal = (string) ($oc['result'] ?? '');
+                $this->state->recordRefusal($agent_id, (string) $last['verb'], (array) ($last['args'] ?? []), $refusal, $tick, RejectionClassifier::isTransient($refusal));
+            }
+
             // Combat overrides everything — defend before consulting the brain
             // or the loop guard. Heal, shoot back, or break contact.
             if (($defence = Ladder::defensiveAction($rawObs)) !== null) {
@@ -1694,6 +1749,9 @@ final class AutoPlayer
                 // The model's own pick, before any gate or loop break rewrites
                 // it: {@see turnSource()} compares the submission against this.
                 $proposed = $decision === null ? null : ['verb' => (string) $decision['verb'], 'args' => (array) ($decision['args'] ?? [])];
+                if ($decision !== null) {
+                    $decision['args'] = self::canonicalArgs((array) ($decision['args'] ?? []));
+                }
 
                 // The model says its plan step is done. Its judgement stands
                 // even when a gate replaces the verb below: the step is about
@@ -2829,6 +2887,29 @@ final class AutoPlayer
                             ? ['verb' => $acq['verb'], 'args' => $acq['args'], 'reason' => "cannot build {$part} — short " . $missing[$res] . " {$res}; get it first"]
                             : $this->earnStep($rawObs, $held, "cannot build {$part} — short " . $missing[$res] . " {$res}", $tried, $known, $stance, $departSelectSkip, $this->state->boardWants($agent_id), 'build');
                     }
+                }
+
+                // The game refused exactly this intent a moment ago. Live:
+                // `buy aluminium` six times in 86 ticks, the refusal listed in
+                // the prompt each time. Showing a refusal was not enough, so
+                // the identical intent does not go out again while the refusal
+                // is fresh ({@see StateStore::recentRefusal()}). Idle verbs are
+                // exempt: they are what every fallback bottoms out in.
+                if (! in_array((string) ($decision['verb'] ?? ''), ['deposit', 'wait'], true)
+                    && ($refused = $this->state->recentRefusal($agent_id, (string) $decision['verb'], (array) ($decision['args'] ?? []), $tick)) !== null
+                ) {
+                    $decision = $this->earnStep(
+                        $rawObs,
+                        (array) $observation->getInventory(),
+                        "not resending {$decision['verb']} — the game refused exactly this {$refused['ago']} ticks ago: \"{$refused['result']}\"",
+                        $tried,
+                        $known,
+                        $stance,
+                        $departSelectSkip,
+                        $this->state->boardWants($agent_id),
+                        (string) $decision['verb'],
+                    );
+                    $verb = (string) $decision['verb'];
                 }
 
                 if (($decision['verb'] ?? '') === 'combine') {

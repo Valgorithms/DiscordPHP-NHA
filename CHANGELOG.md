@@ -6,6 +6,25 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.18.0] - 2026-09-25
+
+### Added
+- **An intent the game just refused is not sent again.** The engine's
+  refusals were shown to the model and it resent them anyway: `buy aluminium`
+  six times in 86 ticks, "depot doesn't trade aluminium" in its prompt each
+  time. A refused intent is now remembered verb and args exactly
+  (`recordRefusal()`), for 300 ticks, or 60 when the reason is a try-again-later
+  one (`RejectionClassifier::isTransient()`), and the same intent is swapped
+  out before submission. The model sees the block under BLOCKED.
+
+### Fixed
+- **The game spells it `aluminum`.** Our system prompt, prompt notes and
+  ladder reasons said "aluminium"; the model copied it into `buy` and `combine`,
+  and the shortage gate, finding 0 `aluminium` beside 4 `aluminum`, turned a
+  good composite `combine` into a refused buy. Every model-facing text now
+  uses the game's spelling, and known aliases in the model's `resource`,
+  `ingredients` and `with` are mapped before any gate reads them.
+
 ## [3.17.0] - 2026-09-25
 
 ### Added

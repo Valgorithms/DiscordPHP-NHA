@@ -42,6 +42,22 @@ trait DecisionLogTrait
     private const VETO_CAP = 6;
 
     /**
+     * How long the game's refusal of an exact intent keeps that intent from
+     * going out again: a durable reason ("depot doesn't trade aluminium")
+     * for the longer window, a transient one ("not enough crystal") for the
+     * shorter, since fixing the shortage is exactly what should come next.
+     *
+     * @since 3.18.0
+     */
+    private const REFUSAL_TICKS = 300;
+
+    /** @since 3.18.0 */
+    private const REFUSAL_TRANSIENT_TICKS = 60;
+
+    /** How many refused intents are remembered per agent. */
+    private const REFUSAL_CAP = 8;
+
+    /**
      * Records the brain's most recent decision for an agent (verb, args, the
      * one-line rationale and the `queued_intent` id it produced), so a later
      * command can show "what did the bot last do, and did it land?".
@@ -204,6 +220,55 @@ trait DecisionLogTrait
         }
 
         return $out;
+    }
+
+    /**
+     * Records that the game refused this exact intent (verb and args).
+     *
+     * The engine's refusals were shown to the model and it resent them
+     * anyway: `buy aluminium` six times in 86 ticks, "depot doesn't trade
+     * aluminium" listed in its prompt each time.
+     *
+     * @param array<string, mixed> $args
+     * @param bool                 $transient A try-again-later reason ({@see \NHA\Brain\RejectionClassifier::isTransient()}).
+     *
+     * @since 3.18.0
+     */
+    public function recordRefusal(int $agent_id, string $verb, array $args, string $result, int $tick, bool $transient): void
+    {
+        if ($verb === '') {
+            return;
+        }
+        $key = $verb . ' ' . json_encode(self::sortedArgs($args), JSON_UNESCAPED_SLASHES);
+        $refusals = (array) ($this->data['agent_refusals'][(string) $agent_id] ?? []);
+        unset($refusals[$key]);
+        $refusals[$key] = [
+            'result' => mb_substr($result, 0, 240),
+            'tick' => $tick,
+            'until' => $tick + ($transient ? self::REFUSAL_TRANSIENT_TICKS : self::REFUSAL_TICKS),
+        ];
+        $this->data['agent_refusals'][(string) $agent_id] = array_slice($refusals, -self::REFUSAL_CAP, null, true);
+        $this->save();
+    }
+
+    /**
+     * The game's recent refusal of exactly this intent, or null.
+     *
+     * @param array<string, mixed> $args
+     *
+     * @return array{result: string, ago: int}|null
+     *
+     * @since 3.18.0
+     */
+    public function recentRefusal(int $agent_id, string $verb, array $args, int $tick): ?array
+    {
+        $key = $verb . ' ' . json_encode(self::sortedArgs($args), JSON_UNESCAPED_SLASHES);
+        $r = $this->data['agent_refusals'][(string) $agent_id][$key] ?? null;
+        if (! is_array($r) || $tick >= (int) ($r['until'] ?? 0)) {
+            return null;
+        }
+
+        return ['result' => (string) ($r['result'] ?? ''), 'ago' => max(0, $tick - (int) ($r['tick'] ?? $tick))];
     }
 
     /** Args with their keys sorted, recursively, so `{a,b}` and `{b,a}` are one proposal. */

@@ -405,7 +405,7 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
-     * A production recipe (aluminium+carbon → composite) is known-good and
+     * A production recipe (aluminum+carbon → composite) is known-good and
      * re-craftable; a stale `dead` entry — almost always from one turn the agent
      * was short an ingredient — must not block it. This is the wedge that stuck
      * the composite build.
@@ -416,13 +416,13 @@ class AutoPlayerTest extends NHAUnitTestCase
     public function testAProductionRecipeIsNeverBlockedByAStaleDeadEntry(): void
     {
         $state = new StateStore($this->statePath);
-        $state->recordDeadCombine(142287, 'aluminium+carbon');
+        $state->recordDeadCombine(142287, 'aluminum+carbon');
 
         $nha = $this->nhaWith([
             'tick' => 5, 'downed_until' => 0, 'position' => [1, 1],
-            'inventory' => ['aluminium' => 40, 'carbon' => 40],
+            'inventory' => ['aluminum' => 40, 'carbon' => 40],
         ]);
-        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminium":1,"carbon":1}}}'), $state);
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminum":1,"carbon":1}}}'), $state);
 
         $player->step(142287, 'tok');
 
@@ -839,19 +839,19 @@ class AutoPlayerTest extends NHAUnitTestCase
      */
     public function testStepAllowsAProductionCombineEvenWhenWorldKnown(): void
     {
-        // aluminium+carbon → composite is a production recipe: known, but you
+        // aluminum+carbon → composite is a production recipe: known, but you
         // re-craft it every time you want to build, so it is never blocked.
         $nha = $this->nhaWith([
             'tick' => 5, 'downed_until' => 0, 'position' => [1, 1],
-            'inventory' => ['aluminium' => 4, 'carbon' => 4],
-            'dynamic' => [['sig' => 'aluminium,carbon']],
+            'inventory' => ['aluminum' => 4, 'carbon' => 4],
+            'dynamic' => [['sig' => 'aluminum,carbon']],
         ]);
-        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminium":1,"carbon":1}}}'), new StateStore($this->statePath));
+        $player = new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminum":1,"carbon":1}}}'), new StateStore($this->statePath));
 
         $player->step(142287, 'tok');
 
         $this->assertSame('combine', $this->posts[0][1]['verb'], 'a production recipe is not treated as spent research');
-        $this->assertSame(['aluminium' => 1, 'carbon' => 1], $this->posts[0][1]['args']['ingredients']);
+        $this->assertSame(['aluminum' => 1, 'carbon' => 1], $this->posts[0][1]['args']['ingredients']);
     }
 
     /**
@@ -3134,5 +3134,70 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertCount(1, $calls, 'stale, so reviewed');
         self::assertSame(1, $state->plan(142287)['step']);
         self::assertStringContainsString('🗺️ plan reviewed, unchanged: found triton (on step 2/3)', $line);
+    }
+
+    /**
+     * Live: our own prompt said "aluminium", the model copied it, and the game
+     * refused `buy aluminium` six times in a row. The game's spelling goes out.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheModelsSpellingIsMappedToTheGames(): void
+    {
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 5, 'downed_until' => 0, 'position' => [1, 1], 'inventory' => ['credits' => 5000]]),
+            $this->brainReturning('{"verb":"buy","args":{"resource":"aluminium","n":3}}'),
+            new StateStore($this->statePath),
+        );
+
+        $player->step(142287, 'tok');
+
+        self::assertSame(['resource' => 'aluminum', 'n' => 3], $this->posts[0][1]['args']);
+        self::assertSame('adjusted', $player->lastTurn(142287)['source'], 'the model\'s pick, respelled');
+    }
+
+    /**
+     * The shortage gate found 0 `aluminium` beside 4 `aluminum` and turned a
+     * perfectly good composite `combine` into a buy the game refuses.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testACombineSpelledTheBritishWayStillCombines(): void
+    {
+        $nha = $this->nhaWith([
+            'tick' => 5, 'downed_until' => 0, 'position' => [1, 1],
+            'inventory' => ['aluminum' => 4, 'carbon' => 4, 'credits' => 5000],
+        ]);
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"combine","args":{"ingredients":{"aluminium":1,"carbon":1}}}'), new StateStore($this->statePath)))
+            ->step(142287, 'tok');
+
+        self::assertSame('combine', $this->posts[0][1]['verb']);
+        self::assertSame(['aluminum' => 1, 'carbon' => 1], $this->posts[0][1]['args']['ingredients']);
+    }
+
+    /**
+     * The game refused an intent; the model proposes it again, word for word.
+     * It does not go out, the model is told, and a different intent still does.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAnIntentTheGameJustRefusedIsNotResent(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordDecision(142287, ['verb' => 'buy', 'args' => ['resource' => 'widget', 'n' => 3], 'reason' => '', 'queued_intent' => 999, 'tick' => 1]);
+        $refused = ['tick' => 5, 'downed_until' => 0, 'position' => [1, 1], 'inventory' => ['credits' => 5000, 'wood' => 40],
+            'status' => 'rejected', 'result' => "depot doesn't trade widget"];
+
+        $player = new AutoPlayer($this->nhaWith($refused), $this->brainReturning('{"verb":"buy","args":{"n":3,"resource":"widget"}}'), $state);
+        $player->step(142287, 'tok');
+
+        self::assertNotSame(['verb' => 'buy', 'args' => ['n' => 3, 'resource' => 'widget']], ['verb' => $this->posts[0][1]['verb'], 'args' => $this->posts[0][1]['args']], 'not resent');
+        self::assertSame('override', $player->lastTurn(142287)['source']);
+        self::assertStringContainsString("depot doesn't trade widget", $state->recentVetoes(142287, 5)[0]['why'], 'and the model is told why');
+
+        $this->posts = [];
+        $later = ['tick' => 6, 'downed_until' => 0, 'position' => [1, 1], 'inventory' => ['credits' => 5000, 'wood' => 40]];
+        (new AutoPlayer($this->nhaWith($later), $this->brainReturning('{"verb":"buy","args":{"resource":"iron","n":3}}'), $state))->step(142287, 'tok');
+        self::assertSame(['resource' => 'iron', 'n' => 3], $this->posts[0][1]['args'], 'a different buy goes out');
     }
 }

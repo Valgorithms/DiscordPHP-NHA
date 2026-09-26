@@ -92,4 +92,24 @@ class DecisionLogTraitTest extends NHAUnitTestCase
         $store->recordDecision(7, ['verb' => 'mine', 'args' => [], 'reason' => '', 'tick' => 6]);
         self::assertArrayNotHasKey('proposed', $store->getLastDecision(7), 'an older record does not leak into a newer one');
     }
+
+    /**
+     * A durable refusal holds the exact intent back longer than a transient
+     * one — fixing a shortage is exactly what should come next.
+     *
+     * @covers \NHA\State\DecisionLogTrait
+     */
+    public function testARefusalHoldsTheExactIntentForItsWindow(): void
+    {
+        $store = new StateStore($this->path);
+        $store->recordRefusal(7, 'buy', ['resource' => 'aluminium', 'n' => 3], "depot doesn't trade aluminium", 1_000, false);
+        $store->recordRefusal(7, 'combine', ['ingredients' => ['silicon' => 1, 'wire' => 1]], 'not enough wire', 1_000, true);
+
+        self::assertSame(['result' => "depot doesn't trade aluminium", 'ago' => 50], $store->recentRefusal(7, 'buy', ['n' => 3, 'resource' => 'aluminium'], 1_050), 'args in any order');
+        self::assertNull($store->recentRefusal(7, 'buy', ['resource' => 'aluminium', 'n' => 4], 1_050), 'only the exact intent');
+        self::assertNull($store->recentRefusal(7, 'buy', ['resource' => 'aluminium', 'n' => 3], 1_300), 'durable window over');
+
+        self::assertNotNull($store->recentRefusal(7, 'combine', ['ingredients' => ['silicon' => 1, 'wire' => 1]], 1_059));
+        self::assertNull($store->recentRefusal(7, 'combine', ['ingredients' => ['silicon' => 1, 'wire' => 1]], 1_060), 'transient window over');
+    }
 }

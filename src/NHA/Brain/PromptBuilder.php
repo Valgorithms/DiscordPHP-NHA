@@ -429,7 +429,7 @@ final class PromptBuilder
         }
         if (($raw['inventory']['composite_material'] ?? 0) > 0 && ($raw['inventory']['composite'] ?? 0) === 0) {
             $lines[] = 'NOTE: you hold `composite_material`, NOT `composite`. A `construct` tower needs `composite` '
-                . '(aluminium + carbon) — you cannot build one yet, so do not keep trying.';
+                . '(aluminum + carbon) — you cannot build one yet, so do not keep trying.';
         }
 
         // The strategist's plan, just ahead of the ladder's suggestion: the
