@@ -3330,4 +3330,23 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertSame(['depart', ['dest' => 'earth']], [$this->posts[0][1]['verb'], $this->posts[0][1]['args']]);
         self::assertSame('supply', $player->lastTurn(142285)['source']);
     }
+
+    /**
+     * Live: with the thermal_core home, the agent departed for Triton and the
+     * engine answered "your ship makes 133 but Triton needs 320". No load of
+     * any fuel clears 320, so Triton is parked unreachable instead of being
+     * held for every 1,400-tick window, forever.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testADeltaVNoShipCanMakeParksTheBody(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordDecision(142285, ['verb' => 'depart', 'args' => ['dest' => 'triton'], 'reason' => '', 'queued_intent' => 999, 'tick' => 1_829_300]);
+        $nha = $this->nhaWith($this->season8Stall(['status' => 'rejected', 'result' => 'Δv too low: your ship makes 133 but Triton needs 320. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.']));
+
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state))->step(142285, 'tok');
+
+        self::assertContains('triton', $state->departUnreachable(142285));
+    }
 }

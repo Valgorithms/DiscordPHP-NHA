@@ -113,4 +113,23 @@ class RejectionClassifierTest extends NHAUnitTestCase
         $this->assertTrue(RejectionClassifier::isTransient('the Mars launch window is CLOSED'));
         $this->assertFalse(RejectionClassifier::isTransient("depot doesn't trade aluminium"));
     }
+
+    /**
+     * Live: "your ship makes 133 but Triton needs 320". Past the ceiling no
+     * fuel helps, so it is a hull limit, not a wait — and read from the feed,
+     * which carries no args, the destination comes from the reason.
+     *
+     * @covers \NHA\Brain\RejectionClassifier::classify
+     * @covers \NHA\Brain\RejectionClassifier::isTransient
+     */
+    public function testADeltaVNoShipCanMakeIsACapabilityLimit(): void
+    {
+        $hit = RejectionClassifier::classify('depart', [], 'Δv too low: your ship makes 133 but Triton needs 320. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.');
+
+        $this->assertSame('depart:triton', $hit['key']);
+        $this->assertSame('capability', $hit['class']);
+        $this->assertFalse(RejectionClassifier::isTransient('Δv too low: your ship makes 133 but Triton needs 320. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.'));
+        $this->assertNull(RejectionClassifier::classify('depart', ['dest' => 'titan'], 'Δv too low: your ship makes 133 but Titan needs 220. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.'), 'below the ceiling: buy fuel');
+        $this->assertTrue(RejectionClassifier::isTransient('Δv too low: your ship makes 133 but Titan needs 220. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.'));
+    }
 }

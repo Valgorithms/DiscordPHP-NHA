@@ -6,6 +6,20 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.20.2] - 2026-09-25
+
+### Fixed
+- **Triton is out of reach, and is now treated as such.** With the
+  thermal_core home, the agent departed for Triton and the engine answered
+  "your ship makes 133 but Triton needs 320". The engine's rocket equation
+  approaches `ve·eff/5` however much fuel is loaded — 300 at best, helium3 on an
+  ion drive — so no hull on any load clears 320. "Δv too low" was read as a
+  wait for fuel, so the agent would have held in orbit for every Triton window,
+  forever. `GameData::DV_CEILING` / `dvOutOfReach()` now mark such a refusal a
+  hull limit: the outcome handler parks the body unreachable, the
+  classifier files it as `capability` (and now knows the outer bodies' names
+  when the feed carries no args), and the refusal memory treats it as durable.
+
 ## [3.20.1] - 2026-09-25
 
 ### Fixed

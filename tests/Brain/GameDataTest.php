@@ -202,4 +202,14 @@ class GameDataTest extends NHAUnitTestCase
         $this->assertSame(['phobos', 'deimos'], GameData::minedOn('c_regolith'));
         $this->assertSame([], GameData::minedOn('iron'), 'Earth and the depot supply it');
     }
+
+    /**
+     * @covers \NHA\Brain\GameData::dvOutOfReach
+     */
+    public function testANeedPastTheDeltaVCeilingIsOutOfReach(): void
+    {
+        $this->assertTrue(GameData::dvOutOfReach('Δv too low: your ship makes 133 but Triton needs 320. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.'), 'the live refusal');
+        $this->assertFalse(GameData::dvOutOfReach('Δv too low: your ship makes 133 but Titan needs 220. Load more/better fuel (cryo_fuel/helium3) or lighten the ship.'), 'helium3 can make 220');
+        $this->assertFalse(GameData::dvOutOfReach('the Triton launch window is CLOSED'));
+    }
 }

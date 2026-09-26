@@ -102,6 +102,31 @@ final class GameData
     public const WARP_CRATE_CAP = 25;
 
     /**
+     * The most Δv any ship can make. The engine's rocket equation is
+     * `loaded·ve·eff / (mass + 5·loaded)` (`engine.py` `dv_capacity`), which
+     * approaches `ve·eff / 5` however much fuel is loaded: 300 at best, for
+     * helium3 (`FUEL_VE` 500) on an ion drive (`ENGINE_EFF` 3). A need at or
+     * above it is out of reach for every hull on every load. Live, Triton
+     * needs 320: "your ship makes 133 but Triton needs 320".
+     *
+     * @since 3.20.2
+     */
+    public const DV_CEILING = 300;
+
+    /**
+     * Whether a "Δv too low" refusal names a need no ship can ever meet
+     * ({@see DV_CEILING}), so the destination is unreachable rather than
+     * waiting on fuel.
+     *
+     * @since 3.20.2
+     */
+    public static function dvOutOfReach(string $reason): bool
+    {
+        return preg_match('/your ship makes\s+\d+\s+but\s+\S+\s+needs\s+(\d+)/i', $reason, $m) === 1
+            && (int) $m[1] >= self::DV_CEILING;
+    }
+
+    /**
      * Spellings the model uses that the engine does not, each mapped to the
      * engine's own name. Not an engine table: a guard against the model's
      * vocabulary. Live, `aluminium` (copied from our own prompt text) was

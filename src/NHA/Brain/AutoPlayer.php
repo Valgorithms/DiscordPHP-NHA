@@ -1355,7 +1355,10 @@ final class AutoPlayer
                         $permanent = $noGear
                             || str_contains($why, 'thrust/(mass')
                             || str_contains($why, 'thrust-to-weight')
-                            || str_contains($why, 'ion_thruster (orbital drive)');
+                            || str_contains($why, 'ion_thruster (orbital drive)')
+                            // A Δv no ship can make on any load: waiting on fuel
+                            // would hold in orbit for every window, forever.
+                            || GameData::dvOutOfReach($why);
                         $this->state->recordDepartRejection($agent_id, $lastDepartDest, $lastDepartTick, $permanent);
                         // A gearless hull fails IDENTICALLY for every body that
                         // needs a touchdown — park them all at once so the agent

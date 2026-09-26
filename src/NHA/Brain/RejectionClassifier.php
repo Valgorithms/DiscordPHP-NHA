@@ -50,6 +50,11 @@ final class RejectionClassifier
     public static function isTransient(string $result): bool
     {
         $why = strtolower(trim($result));
+        // "Δv too low" reads as try-again-later, and usually is: more fuel.
+        // Not past the ceiling no ship can clear ({@see GameData::DV_CEILING}).
+        if (GameData::dvOutOfReach($why)) {
+            return false;
+        }
         foreach (self::TRANSIENT as $t) {
             if (str_contains($why, $t)) {
                 return true;
@@ -81,7 +86,7 @@ final class RejectionClassifier
             $dest = strtolower((string) ($args['dest'] ?? $args['body'] ?? ''));
             // The `GET /agent/{id}.recent` feed carries no args — recover the
             // destination from the engine's own reason string when it names one.
-            if ($dest === '' && preg_match('/\b(deimos|phobos|mars|venus|luna|moon)\b/', $why, $b) === 1) {
+            if ($dest === '' && preg_match('/\b(deimos|phobos|mars|venus|enceladus|titan|triton|luna|moon)\b/', $why, $b) === 1) {
                 $dest = $b[1];
             }
             if ($dest === '' || $dest === 'earth') {
@@ -91,6 +96,11 @@ final class RejectionClassifier
                 return $entry("depart:{$dest}", 'needs_part');
             }
             if (str_contains($why, 'thrust/(mass') || str_contains($why, 'thrust-to-weight') || str_contains($why, 'ion_thruster (orbital drive)')) {
+                return $entry("depart:{$dest}", 'capability');
+            }
+            // Beyond the Δv any ship can make ({@see GameData::DV_CEILING}):
+            // no fuel fixes it. A need below the ceiling stays transient.
+            if (GameData::dvOutOfReach($why)) {
                 return $entry("depart:{$dest}", 'capability');
             }
             foreach (['acid_skin', 'heat_shield'] as $item) {
