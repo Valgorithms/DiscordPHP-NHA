@@ -206,6 +206,81 @@ final class Planner
         return $problems;
     }
 
+    /**
+     * Whether a plan step is done, judged from the observation, or null when
+     * the step is not in a form this can check. The model's
+     * `"step_done": true` is then the only signal.
+     *
+     * Live, the model never once reported a step done in 162 turns, and the
+     * plan sat on step 1 while that step (“hold 1 aluminum”, with 4 held) was
+     * already true. Checkable forms, at the start of a step:
+     *  - "hold N item" / "have N item", several joined by "and", "," or "+";
+     *    "a", "an" and "one" count as 1;
+     *  - "be at <body>" / "be on <body>", surface or orbit; "be at earth", "be home";
+     *  - "be in orbit";
+     *  - "be at (x, y)", within one cell.
+     *
+     * @param array<string,mixed> $raw        The observation.
+     * @param list<string>        $knownItems Names that are items (inventory, codex, depot, body
+     *                                        resources, parts): "hold 1 position" is no milestone.
+     *
+     * @since 3.19.0
+     */
+    public static function stepMet(string $step, array $raw, array $knownItems): ?bool
+    {
+        $s = mb_strtolower(trim($step));
+        $s = preg_replace('/^(?:then\s+|to\s+|you\s+)+/u', '', $s) ?? $s;
+
+        if (preg_match('/^be at\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)/u', $s, $m) === 1) {
+            $pos = array_values((array) ($raw['position'] ?? []));
+            if (! isset($pos[0], $pos[1])) {
+                return null;
+            }
+
+            return abs((int) $pos[0] - (int) $m[1]) <= 1 && abs((int) $pos[1] - (int) $m[2]) <= 1;
+        }
+
+        if (preg_match('/^be in (?:earth )?orbit\b/u', $s) === 1) {
+            return (bool) ($raw['in_space'] ?? false) && Ladder::atBody($raw) === null && ! Ladder::inTransit($raw);
+        }
+
+        if (preg_match('/^be (?:at|on|in) (?:the )?([a-z_]+)\b/u', $s, $m) === 1 || preg_match('/^be (home)\b/u', $s, $m) === 1) {
+            $body = $m[1] === 'home' ? 'earth' : $m[1];
+            if (! in_array($body, array_merge(['earth', 'moon', 'luna'], array_keys(GameData::BODY_MINE), Bodies::names($raw)), true)) {
+                return null;
+            }
+            if (Ladder::inTransit($raw)) {
+                return false;
+            }
+
+            return $body === 'earth' ? Ladder::atBody($raw) === null : Ladder::atBody($raw) === $body;
+        }
+
+        if (preg_match('/^(?:hold|have)\s+(?:at least\s+)?(.+)$/u', $s, $m) === 1) {
+            if (preg_match_all('/\b(\d+|an?|one)\s+([a-z][a-z0-9_]*)/u', $m[1], $pairs, PREG_SET_ORDER) < 1) {
+                return null;
+            }
+            $inv = (array) ($raw['inventory'] ?? []);
+            $known = array_flip(array_map('strval', $knownItems));
+            foreach ($pairs as [, $qty, $item]) {
+                $item = GameData::canonical($item);
+                if (! isset($known[$item]) && isset($known[substr($item, 0, -1)]) && str_ends_with($item, 's')) {
+                    $item = substr($item, 0, -1); // "3 chips"
+                }
+                if (! isset($known[$item])) {
+                    return null;
+                }
+                if ((int) ($inv[$item] ?? 0) < (ctype_digit($qty) ? (int) $qty : 1)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return null;
+    }
+
     /** Whether `$text` names `$item` as a whole word — `mars` is not named by `mars_ice`. */
     private static function names(string $text, string $item): bool
     {
@@ -306,6 +381,8 @@ final class Planner
             THEN 2–{$max} STEPS, IN ORDER
             - Each step is a milestone the player can check from its own observation: an item held
               ("hold 1 thermal_core"), a place reached ("be at mars"), a thing done ("found the triton colony").
+            - Start a step with one of these forms whenever you can; they are ticked off automatically:
+              "hold N item" (several joined by "and"), "be at <body>", "be in orbit", "be at (x, y)".
             - Each step names what to make or where to go, not a vague intention ("get ready", "explore").
             - Include the sub-steps a recipe needs: if a thermal_core needs a battery, making the battery is a step.
             - Name items exactly as the recipes, Destinations and Inventory spell them (`mars_ice` is not `ice`),

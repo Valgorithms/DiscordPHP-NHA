@@ -739,6 +739,51 @@ final class AutoPlayer
     private array $planNews = [];
 
     /**
+     * Ticks off every plan step the observation already shows done
+     * ({@see Planner::stepMet()}), in order, and says so.
+     *
+     * The model was asked to report its own progress and never did: 162
+     * turns on step 1, with step 1 already true.
+     *
+     * @param array<string,mixed> $raw The observation, as the turn sees it.
+     *
+     * @return string|null A line for the status line, or null when nothing moved.
+     *
+     * @since 3.19.0
+     */
+    private function tickOffPlanSteps(int $agent_id, array $raw, int $tick): ?string
+    {
+        $plan = $this->state->plan($agent_id);
+        if ($plan === null) {
+            return null;
+        }
+        $known = array_merge(
+            array_keys($this->recipeNeeds),
+            array_map('strval', array_keys((array) ($raw['inventory'] ?? []))),
+            Ladder::DEPOT_TRADEABLE,
+            array_merge(...array_values(GameData::BODY_MINE)),
+            array_keys(GameData::PART),
+        );
+
+        $done = 0;
+        while ($plan['step'] < count($plan['steps'])
+            && Planner::stepMet($plan['steps'][$plan['step']], $raw, $known) === true
+            && $this->state->advancePlan($agent_id, $tick, true) !== null
+        ) {
+            $plan = (array) $this->state->plan($agent_id);
+            ++$done;
+        }
+        if ($done === 0) {
+            return null;
+        }
+        $n = count($plan['steps']);
+
+        return $plan['step'] < $n
+            ? "🗺️ step {$plan['step']}/{$n} done (seen in the observation) — next: {$plan['steps'][$plan['step']]}"
+            : "🗺️ plan complete: {$plan['goal']}";
+    }
+
+    /**
      * Asks the {@see Planner} for a plan when one is due
      * ({@see StateStore::planDue()}), without waiting for it: the reply is
      * stored whenever it lands and shown from the next turn on.
@@ -803,19 +848,10 @@ final class AutoPlayer
     }
 
     /**
-     * Spellings the model uses that the game does not. Live, `aluminium`
-     * (copied from our own prompt text) was bought six times in a row —
-     * "depot doesn't trade aluminium" — and the shortage gate, finding 0
-     * `aluminium` beside 4 `aluminum`, turned a composite `combine` into
-     * another such buy.
-     *
-     * @since 3.18.0
-     */
-    private const RESOURCE_ALIASES = ['aluminium' => 'aluminum', 'sulphur' => 'sulfur'];
-
-    /**
-     * The model's args with {@see RESOURCE_ALIASES} mapped to the game's
-     * spelling: `resource`, the `ingredients` bundle, and `with`.
+     * The model's args with {@see GameData::ALIASES} mapped to the game's
+     * spelling: `resource`, the `ingredients` bundle, and `with`. Live, the
+     * shortage gate found 0 `aluminium` beside 4 `aluminum` and turned a
+     * composite `combine` into a buy the game refuses.
      *
      * @param array<string,mixed> $args
      *
@@ -825,7 +861,7 @@ final class AutoPlayer
      */
     private static function canonicalArgs(array $args): array
     {
-        $fix = static fn(mixed $name): mixed => is_string($name) ? (self::RESOURCE_ALIASES[strtolower($name)] ?? $name) : $name;
+        $fix = static fn(mixed $name): mixed => is_string($name) ? GameData::canonical($name) : $name;
         if (isset($args['resource'])) {
             $args['resource'] = $fix($args['resource']);
         }
@@ -1731,6 +1767,9 @@ final class AutoPlayer
             // body, or it has stopped working: loop breaks piling up, a hold
             // that overran, or one proposal blocked again and again since the
             // plan was set.
+            if (($news = $this->tickOffPlanSteps($agent_id, $rawObs, $tick)) !== null) {
+                $this->planNews[$agent_id] = $news;
+            }
             $plan = $this->state->plan($agent_id);
             if ($plan !== null) {
                 $context['plan'] = $plan;

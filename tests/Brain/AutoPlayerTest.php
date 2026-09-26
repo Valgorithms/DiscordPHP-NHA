@@ -3200,4 +3200,35 @@ class AutoPlayerTest extends NHAUnitTestCase
         (new AutoPlayer($this->nhaWith($later), $this->brainReturning('{"verb":"buy","args":{"resource":"iron","n":3}}'), $state))->step(142287, 'tok');
         self::assertSame(['resource' => 'iron', 'n' => 3], $this->posts[0][1]['args'], 'a different buy goes out');
     }
+
+    /**
+     * Live: 162 turns on step 1, “hold 1 aluminum”, with 4 held. Steps the
+     * observation shows done are ticked off before the model is asked, as
+     * many as are done, and the prompt shows where the plan really is.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testStepsTheObservationShowsDoneAreTickedOff(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->setPlan(142287, 'make a thermal_core', ['hold 1 aluminum', 'hold 1 battery', 'be at mars', 'hold 1 thermal_core'], 'w', 30, 'home');
+        $prompts = [];
+        $calls = [];
+        $player = new AutoPlayer(
+            $this->nhaWith(['tick' => 42, 'position' => [30, 118], 'downed_until' => 0, 'inventory' => ['aluminum' => 4, 'battery' => 1]]),
+            $this->brainRecording('{"verb":"mine","args":{"n":2}}', $prompts),
+            $state,
+            $this->plannerReplying('{}', $calls),
+        );
+
+        $line = '';
+        $player->step(142287, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertSame(2, $state->plan(142287)['step'], 'two steps already true, one turn');
+        self::assertMatchesRegularExpression('/  ✓ 1\. hold 1 aluminum\n  ✓ 2\. hold 1 battery\n  → 3\. be at mars/u', $prompts[0], 'before the model is asked');
+        self::assertStringContainsString('🗺️ step 2/4 done (seen in the observation) — next: be at mars', $line);
+        self::assertSame('3/4', $player->lastTurn(142287)['plan']);
+    }
 }

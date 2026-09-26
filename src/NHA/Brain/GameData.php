@@ -83,6 +83,26 @@ final class GameData
     ];
 
     /**
+     * Spellings the model uses that the engine does not, each mapped to the
+     * engine's own name. Not an engine table: a guard against the model's
+     * vocabulary. Live, `aluminium` (copied from our own prompt text) was
+     * bought six times in a row: "depot doesn't trade aluminium".
+     *
+     * @since 3.19.0
+     */
+    public const ALIASES = ['aluminium' => 'aluminum', 'sulphur' => 'sulfur'];
+
+    /**
+     * The engine's name for `$name` ({@see ALIASES}); anything else unchanged.
+     *
+     * @since 3.19.0
+     */
+    public static function canonical(string $name): string
+    {
+        return self::ALIASES[strtolower($name)] ?? $name;
+    }
+
+    /**
      * The bodies whose `mine` yields `$resource` ({@see BODY_MINE}); empty for
      * anything Earth or the depot supplies.
      *

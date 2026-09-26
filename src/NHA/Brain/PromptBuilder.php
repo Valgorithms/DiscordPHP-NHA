@@ -482,7 +482,8 @@ final class PromptBuilder
             $lines[] = sprintf('  %s %d. %s', $i < $at ? '✓' : ($i === $at ? '→' : ' '), $i + 1, $step);
         }
         $lines[] = $at < count($steps)
-            ? 'Work toward the → step. When your observation shows it is complete, add "step_done": true to your reply.'
+            ? 'Work toward the → step. Steps starting "hold" or "be at" are ticked off automatically; for any other,'
+                . ' add "step_done": true to your reply when your observation shows it complete.'
             : 'Every step is done; a new plan is on its way. Until then, keep the agent productive.';
 
         return $lines;

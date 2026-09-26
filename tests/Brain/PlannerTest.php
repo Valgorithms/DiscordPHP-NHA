@@ -221,4 +221,51 @@ class PlannerTest extends NHAUnitTestCase
 
         self::assertSame(['depart mars', 'land_body on mars', 'mine mars_ice on mars', 'combine battery + mars_ice + aluminum to make thermal_core'], $plan['steps']);
     }
+
+    private const KNOWN = ['aluminum', 'battery', 'mars_ice', 'thermal_core', 'chip', 'glass'];
+
+    /**
+     * @covers \NHA\Brain\Planner::stepMet
+     */
+    public function testAHoldStepIsCheckedAgainstTheInventory(): void
+    {
+        $raw = ['inventory' => ['aluminum' => 4, 'battery' => 1, 'chip' => 3, 'glass' => 2]];
+
+        self::assertTrue(Planner::stepMet('hold 1 aluminum', $raw, self::KNOWN), 'the live step 1, already true');
+        self::assertFalse(Planner::stepMet('hold 5 aluminum', $raw, self::KNOWN));
+        self::assertTrue(Planner::stepMet('Hold a battery', $raw, self::KNOWN), '"a" is one');
+        self::assertTrue(Planner::stepMet('have at least 3 chips', $raw, self::KNOWN), 'a plural of a known item');
+        self::assertTrue(Planner::stepMet('hold 2 glass', $raw, self::KNOWN), 'a name ending in s is not a plural');
+        self::assertFalse(Planner::stepMet('hold 1 battery and 1 mars_ice', $raw, self::KNOWN), 'every item must be held');
+        self::assertTrue(Planner::stepMet('hold 1 aluminium', $raw, self::KNOWN), 'in the game\'s spelling');
+        self::assertNull(Planner::stepMet('hold 1 position', $raw, self::KNOWN), 'not an item: not a milestone');
+        self::assertNull(Planner::stepMet('mine mars_ice until you hold 2 mars_ice', $raw, self::KNOWN), 'only a step that starts with it');
+        self::assertNull(Planner::stepMet('found the triton colony', $raw, self::KNOWN));
+    }
+
+    /**
+     * @covers \NHA\Brain\Planner::stepMet
+     */
+    public function testABeAtStepIsCheckedAgainstWhereTheAgentIs(): void
+    {
+        $onMars = ['expansion' => ['at_body' => 'mars']];
+        $marsOrbit = ['expansion' => ['location' => 'orbit_mars']];
+        $home = ['expansion' => ['location' => 'earth'], 'position' => [71, 139], 'in_space' => false];
+        $earthOrbit = ['expansion' => ['location' => 'earth_orbit'], 'in_space' => true];
+        $enRoute = ['expansion' => ['transit' => ['to' => 'mars']]];
+
+        self::assertTrue(Planner::stepMet('be at mars', $onMars, []));
+        self::assertTrue(Planner::stepMet('be at mars', $marsOrbit, []), 'orbit counts');
+        self::assertFalse(Planner::stepMet('be at mars', $home, []));
+        self::assertFalse(Planner::stepMet('be at mars', $enRoute, []), 'on the way is not there');
+        self::assertFalse(Planner::stepMet('be home', $enRoute, []), 'nor is leaving home');
+        self::assertTrue(Planner::stepMet('be home', $home, []));
+        self::assertFalse(Planner::stepMet('be at earth', $onMars, []));
+        self::assertTrue(Planner::stepMet('be in orbit', $earthOrbit, []));
+        self::assertFalse(Planner::stepMet('be in orbit', $home, []));
+        self::assertTrue(Planner::stepMet('be at (71, 139)', $home, []), 'the live step 1');
+        self::assertTrue(Planner::stepMet('be at (72,140)', $home, []), 'within a cell');
+        self::assertFalse(Planner::stepMet('be at (75, 139)', $home, []));
+        self::assertNull(Planner::stepMet('be at the elevator', $home, []), 'not a body');
+    }
 }

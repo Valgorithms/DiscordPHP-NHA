@@ -121,4 +121,19 @@ class PlanStateTraitTest extends NHAUnitTestCase
         $store->setPlan(7, 'found triton', ['be at mars', 'mine mars_ice', 'make a thermal_core'], 'revised', 2_400, 'home');
         self::assertSame(0, $store->plan(7)['step'], 'new steps start over');
     }
+
+    /**
+     * A step checked against the observation is not a claim to be debounced:
+     * several already-done steps pass in one turn.
+     *
+     * @covers \NHA\State\PlanStateTrait::advancePlan
+     */
+    public function testAVerifiedAdvanceIsNotDebounced(): void
+    {
+        $store = $this->planned();
+
+        self::assertSame(1, $store->advancePlan(7, 1_001, true));
+        self::assertSame(2, $store->advancePlan(7, 1_001, true));
+        self::assertNull($store->advancePlan(7, 1_002), 'a claimed advance still waits');
+    }
 }

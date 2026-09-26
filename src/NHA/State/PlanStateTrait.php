@@ -121,13 +121,21 @@ trait PlanStateTrait
     /**
      * Moves the agent's plan on to its next step.
      *
+     * @param bool $verified The step was checked against the observation
+     *                       ({@see \NHA\Brain\Planner::stepMet()}), not just
+     *                       claimed by the model, so the debounce does not
+     *                       apply: several steps already done can pass in one
+     *                       turn.
+     *
      * @return int|null The new step index, or null when there is no unfinished
      *                  plan or the last advance was too recent.
      */
-    public function advancePlan(int $agent_id, int $tick): ?int
+    public function advancePlan(int $agent_id, int $tick, bool $verified = false): ?int
     {
         $p = $this->plan($agent_id);
-        if ($p === null || $p['step'] >= count($p['steps']) || $tick - $p['stepped_at'] < self::PLAN_STEP_MIN_TICKS) {
+        if ($p === null || $p['step'] >= count($p['steps'])
+            || (! $verified && $tick - $p['stepped_at'] < self::PLAN_STEP_MIN_TICKS)
+        ) {
             return null;
         }
         $key = (string) $agent_id;

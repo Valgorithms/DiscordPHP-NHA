@@ -115,9 +115,13 @@ chain no rule encodes (fly to Mars, mine `mars_ice`, make a battery and a
 planner is a second, rarer call to the same model: it sees the turn digest plus
 the world's objective board and returns one goal and 2–6 checkable steps
 (schema-enforced). The plan sits in `state.json` and is shown in every turn
-prompt, just ahead of the SUGGESTED line, with the current step marked `→`; the
-turn model adds `"step_done": true` when its observation shows that step done
-(at most one advance per 20 ticks). `planDue()` asks again when there is no
+prompt, just ahead of the SUGGESTED line, with the current step marked `→`.
+Before the model is asked, `tickOffPlanSteps()` advances past every step the
+observation already shows done (`Planner::stepMet()`: "hold N item", "be at
+<body>", "be in orbit", "be at (x, y)"), several in one turn if need be. For
+any other step the turn model adds `"step_done": true` (at most one such
+advance per 20 ticks). In its first 162 live turns the model never once did,
+so this check is what moves the plan. `planDue()` asks again when there is no
 plan, it is finished or 1,200 ticks old, the agent has reached or left a body,
 or it has stalled (two or more loop breaks in a row, an overrun hold, or one
 proposal blocked three times since the plan was set) after being given 450

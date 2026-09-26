@@ -6,6 +6,23 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-09-25
+
+### Added
+- **Plan steps are ticked off from the observation.** The model was asked to
+  report its own progress with `"step_done": true` and never did: 162 live
+  turns on step 1, "hold 1 aluminum", with 4 held. `Planner::stepMet()` now
+  checks a step in one of the forms the planner is asked to use ("hold N item",
+  several joined by "and"; "be at <body>", surface or orbit; "be in orbit";
+  "be at (x, y)"), and every step the observation shows done is passed before
+  the model is asked, several in one turn if need be. Anything else still
+  waits for the model's `step_done`. The status line says
+  `🗺️ step 2/4 done (seen in the observation) — next: …`.
+
+### Changed
+- The spelling map moved to `GameData::ALIASES` / `GameData::canonical()`, so
+  the step check and the argument respelling share it.
+
 ## [3.18.0] - 2026-09-25
 
 ### Added
