@@ -197,17 +197,24 @@ trait LoopStrategyStateTrait
      * Live, Triton (Δv 320) was counted as a destination the hull could not
      * serve, and the agent started gearing a replacement ship for it.
      *
+     * The Δv the engine asked for is kept with it (3.22.0), so a change to the
+     * rules can be noticed: {@see outOfReachNeeds()}.
+     *
+     * @param int $need The Δv the engine asked for, or 0 when unknown.
+     *
      * @since 3.21.0
      */
-    public function recordOutOfReach(int $agent_id, string $body): void
+    public function recordOutOfReach(int $agent_id, string $body, int $need = 0): void
     {
-        $key = (string) $agent_id;
-        $list = $this->outOfReach($agent_id);
-        if ($body === '' || in_array($body, $list, true)) {
+        if ($body === '') {
             return;
         }
-        $list[] = $body;
-        $this->data['agent_out_of_reach'][$key] = $list;
+        $needs = $this->outOfReachNeeds($agent_id);
+        if (array_key_exists($body, $needs) && ($need === 0 || $needs[$body] === $need)) {
+            return;
+        }
+        $needs[$body] = $need;
+        $this->data['agent_out_of_reach'][(string) $agent_id] = $needs;
         $this->save();
     }
 
@@ -220,7 +227,50 @@ trait LoopStrategyStateTrait
      */
     public function outOfReach(int $agent_id): array
     {
-        return array_values(array_filter((array) ($this->data['agent_out_of_reach'][(string) $agent_id] ?? []), 'is_string'));
+        return array_keys($this->outOfReachNeeds($agent_id));
+    }
+
+    /**
+     * Each out-of-reach body and the Δv the engine asked for when it was
+     * parked (0 when unknown). 3.21.0 stored a bare list; that reads as
+     * bodies with an unknown need.
+     *
+     * @return array<string,int>
+     *
+     * @since 3.22.0
+     */
+    public function outOfReachNeeds(int $agent_id): array
+    {
+        $out = [];
+        foreach ((array) ($this->data['agent_out_of_reach'][(string) $agent_id] ?? []) as $k => $v) {
+            if (is_string($k) && $k !== '') {
+                $out[$k] = (int) $v;
+            } elseif (is_string($v) && $v !== '') {
+                $out[$v] = 0;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Brings a body back in reach: off the out-of-reach record and off the
+     * depart-unreachable set. For when the rules change under it — the engine
+     * now asks for a Δv some ship can make.
+     *
+     * @since 3.22.0
+     */
+    public function clearOutOfReach(int $agent_id, string $body): void
+    {
+        $key = (string) $agent_id;
+        $needs = $this->outOfReachNeeds($agent_id);
+        unset($needs[$body]);
+        $this->data['agent_out_of_reach'][$key] = $needs;
+        $this->data['agent_depart_unreachable'][$key] = array_values(array_filter(
+            (array) ($this->data['agent_depart_unreachable'][$key] ?? []),
+            static fn($b): bool => is_string($b) && $b !== $body,
+        ));
+        $this->save();
     }
 
     /**

@@ -122,8 +122,17 @@ final class GameData
      */
     public static function dvOutOfReach(string $reason): bool
     {
-        return preg_match('/your ship makes\s+\d+\s+but\s+\S+\s+needs\s+(\d+)/i', $reason, $m) === 1
-            && (int) $m[1] >= self::DV_CEILING;
+        return ($need = self::dvNeeded($reason)) !== null && $need >= self::DV_CEILING;
+    }
+
+    /**
+     * The Δv a "Δv too low" refusal asked for, or null for any other reason.
+     *
+     * @since 3.22.0
+     */
+    public static function dvNeeded(string $reason): ?int
+    {
+        return preg_match('/your ship makes\s+\d+\s+but\s+\S+\s+needs\s+(\d+)/i', $reason, $m) === 1 ? (int) $m[1] : null;
     }
 
     /**

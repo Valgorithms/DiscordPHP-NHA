@@ -6,6 +6,27 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-09-26
+
+### Added
+- **Ready for a Triton fix.** Triton is parked because the engine asks for Δv
+  320 and no ship can make 300 — a number in the engine's table, which a
+  balance fix would lower. The park was permanent. Now the Δv the engine asked
+  for is kept with it (`recordOutOfReach($agent, $body, $need)`,
+  `outOfReachNeeds()`), and every turn `reopenReach()` compares it with the live
+  `dv_need`: once that drops below the ceiling, the body comes off the parked
+  set, the depart-unreachable set and the capability ledger
+  (`clearOutOfReach()`, `clearCapability()`), and the status line says
+  `🔭 back in reach: triton (Δv 280, was 320)`. The ordinary flight logic then
+  takes it from there. A 3.21.0 bare list still reads, as unknown needs.
+- `GameData::dvNeeded()` — the Δv a "Δv too low" refusal asked for.
+
+### Fixed
+- **The entry gear could be researched away.** The thermal_core (and the
+  gate crates) were not protected: the model's combine gate and the loop
+  breaker's research pass could both spend them. Both now treat them like
+  fuel and shields.
+
 ## [3.21.0] - 2026-09-25
 
 ### Added

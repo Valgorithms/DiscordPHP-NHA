@@ -3348,7 +3348,7 @@ class AutoPlayerTest extends NHAUnitTestCase
         (new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state))->step(142285, 'tok');
 
         self::assertContains('triton', $state->departUnreachable(142285));
-        self::assertSame(['triton'], $state->outOfReach(142285), 'and remembered past any new hull');
+        self::assertSame(['triton' => 320], $state->outOfReachNeeds(142285), 'and remembered, with the Δv it needed');
     }
 
     /**
@@ -3436,5 +3436,54 @@ class AutoPlayerTest extends NHAUnitTestCase
 
         self::assertStringNotContainsString('ship —', $line);
         self::assertStringNotContainsString('dead-end hull', $line);
+    }
+
+    /**
+     * Ready for a fix: when the engine's table changes and Triton's Δv drops
+     * below what a ship can make, the park lifts by itself — every place it
+     * was recorded — and the status line says so. While it stays at 320,
+     * nothing moves.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testABalanceFixBringsTritonBackInReach(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'thermal_core' => 1]);
+        $state->recordOutOfReach(142285, 'triton', 320);
+        $state->recordCapability(142285, 'depart:triton', 'capability', 'Δv too low', 1_829_000);
+
+        (new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state))->step(142285, 'tok');
+        self::assertSame(['triton'], $state->outOfReach(142285), 'still 320: still parked');
+
+        $this->posts = [];
+        $fixed = $home;
+        $fixed['expansion']['windows']['triton']['dv_need'] = 280;
+        $line = '';
+        (new AutoPlayer($this->nhaWith($fixed), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state))->step(142285, 'tok')
+            ->then(function (string $l) use (&$line): void {
+                $line = $l;
+            });
+
+        self::assertSame([], $state->outOfReach(142285));
+        self::assertNotContains('triton', $state->departUnreachable(142285));
+        self::assertSame([], $state->capabilityTargets(142285, 'depart'));
+        self::assertStringContainsString('🔭 back in reach: triton (Δv 280, was 320)', $line);
+    }
+
+    /**
+     * The thermal_core cost a trip to Mars and is the one thing Triton asks
+     * for; a research combine must never eat it.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheEntryGearIsNeverResearchFeedstock(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'thermal_core' => 1, 'salt' => 50]);
+        (new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"thermal_core":1,"salt":1}}}'), $state))->step(142285, 'tok');
+
+        $post = $this->posts[0][1] ?? [];
+        self::assertArrayNotHasKey('thermal_core', (array) (($post['args'] ?? [])['ingredients'] ?? []), 'not combined away');
     }
 }

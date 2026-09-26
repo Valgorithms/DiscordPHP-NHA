@@ -118,7 +118,13 @@ final class AutoPlayer
      * gear), so the guardrail blocks any combine naming one as an ingredient.
      * `helium3` is deliberately absent: it IS an ion_thruster ingredient.
      */
-    private const FLIGHT_CONSUMABLES = ['cryo_fuel', 'hydrogen', 'heat_shield', 'acid_skin'];
+    private const FLIGHT_CONSUMABLES = [
+        'cryo_fuel', 'hydrogen', 'heat_shield', 'acid_skin',
+        // The outer bodies' entry gear, and the gate crates (3.22.0). The live
+        // thermal_core cost a trip to Mars and is the one thing Triton asks
+        // for; a research combine must never eat it.
+        'thermal_core', 'warp_container',
+    ];
 
     /**
      * `a+b => true` for every combine set the world has already invented, from
@@ -791,6 +797,35 @@ final class AutoPlayer
     }
 
     /**
+     * Un-parks every out-of-reach body whose live Δv the engine now says some
+     * ship can make, and says so — or null when nothing changed.
+     *
+     * Triton was parked at Δv 320, past the 300 no hull on any load can reach.
+     * That is a number in the engine's table, and a balance fix would lower
+     * it. Without this the park is permanent: the agent would sit out the fix
+     * holding the very thermal_core the trip needs.
+     *
+     * @param array<string,mixed> $raw
+     *
+     * @since 3.22.0
+     */
+    private function reopenReach(int $agent_id, array $raw): ?string
+    {
+        $bodies = Bodies::all($raw);
+        $back = [];
+        foreach ($this->state->outOfReachNeeds($agent_id) as $body => $was) {
+            $now = (int) (($bodies[$body] ?? [])['dv_need'] ?? 0);
+            if ($now > 0 && $now < GameData::DV_CEILING) {
+                $this->state->clearOutOfReach($agent_id, $body);
+                $this->state->clearCapability($agent_id, "depart:{$body}");
+                $back[] = "{$body} (Δv {$now}" . ($was > 0 ? ", was {$was}" : '') . ')';
+            }
+        }
+
+        return $back === [] ? null : '🔭 back in reach: ' . implode(', ', $back);
+    }
+
+    /**
      * Ticks off every plan step the observation already shows done
      * ({@see Planner::stepMet()}), in order, and says so.
      *
@@ -1119,6 +1154,10 @@ final class AutoPlayer
                 if (in_array($res, ['credits', 'engine', 'motor', 'chip', 'frame', 'fuel'], true) || ! is_numeric($qty) || $qty <= 0) {
                     continue;
                 }
+                // Nor fuel, entry gear or crates ({@see FLIGHT_CONSUMABLES}).
+                if (in_array((string) $res, self::FLIGHT_CONSUMABLES, true)) {
+                    continue;
+                }
                 // Never gamble away survival gear (slug / stimpack / weapon).
                 if (in_array((string) $res, self::COMBAT_KIT, true)) {
                     continue;
@@ -1361,7 +1400,7 @@ final class AutoPlayer
                             || GameData::dvOutOfReach($why);
                         $this->state->recordDepartRejection($agent_id, $lastDepartDest, $lastDepartTick, $permanent);
                         if (GameData::dvOutOfReach($why)) {
-                            $this->state->recordOutOfReach($agent_id, $lastDepartDest);
+                            $this->state->recordOutOfReach($agent_id, $lastDepartDest, (int) GameData::dvNeeded($why));
                         }
                         // A gearless hull fails IDENTICALLY for every body that
                         // needs a touchdown — park them all at once so the agent
@@ -1467,6 +1506,15 @@ final class AutoPlayer
             // Colony-done on its OWN, separate from the merged depart skip list,
             // so the ladder can tell "the hull cannot get there" (rebuild it)
             // from "there is nothing there for us" (a new hull changes nothing).
+            // READY FOR A FIX. A body is parked out of reach because the engine
+            // asked for more Δv than any ship can make. That is the engine's
+            // table, not physics, and it can change: when the live `dv_need`
+            // drops below the ceiling, the body comes back — off the parked
+            // set, the unreachable set and the capability ledger — and the
+            // ordinary flight logic takes it from there.
+            if (($back = $this->reopenReach($agent_id, $rawObs)) !== null) {
+                $this->planNews[$agent_id] = $back;
+            }
             // A body no ship can reach ({@see StateStore::outOfReach()}) is the
             // same case: no new hull changes it. Without it here the ladder
             // read Triton, whose thermal_core the agent holds, as worth a hull

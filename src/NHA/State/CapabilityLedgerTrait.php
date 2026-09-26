@@ -92,6 +92,21 @@ trait CapabilityLedgerTrait
     }
 
     /** Drop every entry of a given class (e.g. `needs_part` on a fresh `finalize`). */
+    /**
+     * Drops one verdict by key (`depart:triton`) — for when the world, not the
+     * agent, removed the reason for it.
+     *
+     * @since 3.22.0
+     */
+    public function clearCapability(int $agent_id, string $key): void
+    {
+        $agent = (string) $agent_id;
+        if (isset($this->data['agent_capabilities'][$agent][$key])) {
+            unset($this->data['agent_capabilities'][$agent][$key]);
+            $this->save();
+        }
+    }
+
     public function clearCapabilityClass(int $agent_id, string $class): void
     {
         $key = (string) $agent_id;
