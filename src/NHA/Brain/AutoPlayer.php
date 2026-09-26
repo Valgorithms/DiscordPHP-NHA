@@ -762,7 +762,7 @@ final class AutoPlayer
         if ($this->state->supplyRunPaused($agent_id, $tick)) {
             return null;
         }
-        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id));
+        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id), $this->state->departUnreachable($agent_id));
         if ($need === null) {
             return null;
         }
@@ -1360,6 +1360,9 @@ final class AutoPlayer
                             // would hold in orbit for every window, forever.
                             || GameData::dvOutOfReach($why);
                         $this->state->recordDepartRejection($agent_id, $lastDepartDest, $lastDepartTick, $permanent);
+                        if (GameData::dvOutOfReach($why)) {
+                            $this->state->recordOutOfReach($agent_id, $lastDepartDest);
+                        }
                         // A gearless hull fails IDENTICALLY for every body that
                         // needs a touchdown — park them all at once so the agent
                         // reaches "rebuild" without burning a window on each.
@@ -1464,7 +1467,12 @@ final class AutoPlayer
             // Colony-done on its OWN, separate from the merged depart skip list,
             // so the ladder can tell "the hull cannot get there" (rebuild it)
             // from "there is nothing there for us" (a new hull changes nothing).
-            if (($doneForLadder = $this->state->colonyDoneBodies($agent_id)) !== []) {
+            // A body no ship can reach ({@see StateStore::outOfReach()}) is the
+            // same case: no new hull changes it. Without it here the ladder
+            // read Triton, whose thermal_core the agent holds, as worth a hull
+            // and kept gearing parts for one.
+            $doneForLadder = array_values(array_unique(array_merge($this->state->colonyDoneBodies($agent_id), $this->state->outOfReach($agent_id))));
+            if ($doneForLadder !== []) {
                 $rawObs['_colony_done'] = $doneForLadder;
             }
             // What the Guild referee has already told this agent, in its own
@@ -1678,7 +1686,7 @@ final class AutoPlayer
             //  - THIS HULL CANNOT SERVE any body that IS worth flying to — a
             //    genuine dead-end hull, and a better one really does fix it.
             //    That is the rebuild, and it stays.
-            $noDestinations = Ladder::liveDestinations($this->state->colonyDoneBodies($agent_id), $rawObs) === []
+            $noDestinations = Ladder::liveDestinations(array_merge($this->state->colonyDoneBodies($agent_id), $this->state->outOfReach($agent_id)), $rawObs) === []
                 || $this->state->rebuildGenerations($agent_id) >= self::REBUILD_GENERATION_CAP;
             $shipStranded = ! $inTransit
                 && ! $noDestinations

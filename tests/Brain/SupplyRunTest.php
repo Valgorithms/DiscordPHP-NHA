@@ -209,4 +209,14 @@ class SupplyRunTest extends NHAUnitTestCase
 
         self::assertNull(SupplyRun::need($this->world([], ['thermal_core' => 1]), ['deimos', 'mars'], ['triton']), 'home with it: done');
     }
+
+    /**
+     * Gear for a trip no ship can make is not worth a run.
+     *
+     * @covers \NHA\Brain\SupplyRun::need
+     */
+    public function testNoRunForABodyNoShipCanReach(): void
+    {
+        self::assertNull(SupplyRun::need($this->world(), ['deimos', 'mars'], ['triton'], ['triton']));
+    }
 }

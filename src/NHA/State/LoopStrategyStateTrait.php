@@ -187,6 +187,43 @@ trait LoopStrategyStateTrait
     }
 
     /**
+     * Records a body no ship can reach: the engine asked for more Δv than any
+     * hull on any load can make ({@see \NHA\Brain\GameData::DV_CEILING}).
+     *
+     * Kept apart from {@see departUnreachable()} on purpose. That set holds
+     * thrust and landing-gear refusals too, which a better hull fixes, so it is
+     * wiped on every `finalize`. This one no hull fixes, so nothing wipes it —
+     * and a body in it is not a reason to call the current hull a dead end.
+     * Live, Triton (Δv 320) was counted as a destination the hull could not
+     * serve, and the agent started gearing a replacement ship for it.
+     *
+     * @since 3.21.0
+     */
+    public function recordOutOfReach(int $agent_id, string $body): void
+    {
+        $key = (string) $agent_id;
+        $list = $this->outOfReach($agent_id);
+        if ($body === '' || in_array($body, $list, true)) {
+            return;
+        }
+        $list[] = $body;
+        $this->data['agent_out_of_reach'][$key] = $list;
+        $this->save();
+    }
+
+    /**
+     * Bodies no ship can reach ({@see recordOutOfReach()}).
+     *
+     * @return list<string>
+     *
+     * @since 3.21.0
+     */
+    public function outOfReach(int $agent_id): array
+    {
+        return array_values(array_filter((array) ($this->data['agent_out_of_reach'][(string) $agent_id] ?? []), 'is_string'));
+    }
+
+    /**
      * Forgets every `depart` verdict for an agent — the retry cooldown and the
      * unreachable set. Called when a new hull is `finalize`d so the fresh ship
      * is not pre-judged by the dead end it replaced.

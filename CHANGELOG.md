@@ -6,6 +6,28 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-09-25
+
+### Added
+- **Bodies no ship can reach are remembered as such** (`recordOutOfReach()` /
+  `outOfReach()`). Kept apart from the depart-unreachable set, which also holds
+  thrust and landing-gear refusals a better hull fixes and is wiped on every
+  `finalize`; nothing wipes this one.
+
+### Fixed
+- **A body no ship can reach started a hull rebuild.** Holding Triton's
+  thermal_core made Triton read as a destination the current hull could not
+  serve, so the dead-end-hull path began gearing a replacement ship ("dead-end
+  hull — ship — combine composite for a light frame/wings"), and the ladder's
+  own fallback did the same. No hull fixes a Δv past the ceiling, and the
+  rebuild's `finalize` would have wiped Triton's parking too. Out-of-reach
+  bodies are now excluded from both the dead-end test and the ladder's
+  `_colony_done` view.
+- **The Destinations list still invited a trip to Triton** ("colony NOT
+  FOUNDED — someone must land there"), and the plan chased it. A parked body now
+  reads UNREACHABLE.
+- **The supply run no longer starts for a destination no ship can reach.**
+
 ## [3.20.2] - 2026-09-25
 
 ### Fixed

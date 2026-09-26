@@ -116,6 +116,7 @@ final class PromptBuilder
                 $colonyDone,
                 (bool) ($lastDecision['gate_refuses_cargo'] ?? false),
                 array_values(array_map('strval', (array) ($lastDecision['unfounded'] ?? []))),
+                array_values(array_diff($skip, $colonyDone)),
             ));
         }
 
@@ -506,13 +507,17 @@ final class PromptBuilder
      *
      * @param array<string,mixed> $raw
      * @param list<string>        $colonyDone
-     * @param list<string>        $unfounded  bodies whose colony is published but not laid
+     * @param list<string>        $unfounded   bodies whose colony is published but not laid
+     * @param list<string>        $unreachable bodies the engine refused for good (3.21.0: Triton,
+     *                                         which needs more Δv than any ship can make, read
+     *                                         "colony NOT FOUNDED — someone must land there" and
+     *                                         the plan chased it for as long as that line stood)
      *
      * @return list<string>
      *
      * @since 3.14.0
      */
-    private static function destinationLines(array $raw, array $colonyDone, bool $gateRefusesCargo, array $unfounded = []): array
+    private static function destinationLines(array $raw, array $colonyDone, bool $gateRefusesCargo, array $unfounded = [], array $unreachable = []): array
     {
         $bodies = Bodies::all($raw);
         if ($bodies === []) {
@@ -541,9 +546,11 @@ final class PromptBuilder
                 $gear === [] ? 'none' : implode(', ', $gear),
                 in_array((string) $body, $colonyDone, true)
                     ? 'your share there is DONE — nothing to fund'
-                    : (in_array((string) $body, $unfounded, true)
+                    : (in_array((string) $body, $unreachable, true)
+                        ? 'UNREACHABLE — the engine refused every ship you have for good (Triton needs more Δv than any ship can make); do not plan a trip there'
+                        : (in_array((string) $body, $unfounded, true)
                         ? "colony NOT FOUNDED — someone must land there and lay it with construct{shape:'colony',body:'{$body}'} before anyone can invest in it"
-                        : 'has colony work for you'),
+                        : 'has colony work for you')),
                 $blockers === [] ? '' : ' Engine: ' . implode(' / ', $blockers),
             );
         }

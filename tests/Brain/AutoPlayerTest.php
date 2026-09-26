@@ -3348,5 +3348,93 @@ class AutoPlayerTest extends NHAUnitTestCase
         (new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state))->step(142285, 'tok');
 
         self::assertContains('triton', $state->departUnreachable(142285));
+        self::assertSame(['triton'], $state->outOfReach(142285), 'and remembered past any new hull');
+    }
+
+    /**
+     * The live state: Deimos and Mars finished, Triton parked beyond any
+     * ship's Δv, the agent on Earth's ground.
+     *
+     * @param array<string,int> $inv
+     */
+    private function tritonOutOfReach(StateStore $state, array $inv): array
+    {
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordDepartRejection(142285, 'triton', 1_829_000, true);
+        $state->recordOutOfReach(142285, 'triton');
+        $home = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false]);
+        $home['inventory'] = $inv;
+
+        return $home;
+    }
+
+    /**
+     * Live: the plan stayed on "craft a thermal_core for Triton" because the
+     * Destinations list still read "colony NOT FOUNDED — someone must land
+     * there". A parked body now says it is out of reach.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     * @covers \NHA\Brain\PromptBuilder::build
+     */
+    public function testTheModelIsToldABodyIsOutOfReach(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'metal' => 50, 'composite' => 10]);
+        $prompts = [];
+        (new AutoPlayer($this->nhaWith($home), $this->brainRecording('{"verb":"mine","args":{"n":2}}', $prompts), $state))->step(142285, 'tok');
+
+        self::assertMatchesRegularExpression('/triton: .*UNREACHABLE/u', $prompts[0]);
+        self::assertStringNotContainsString('someone must land there', $prompts[0], 'no longer invited to go');
+    }
+
+    /**
+     * Live: holding Triton's thermal_core made Triton read as a destination
+     * the hull could not serve, and the agent began gearing a replacement ship
+     * ("dead-end hull — ship — combine composite for a light frame/wings").
+     * No hull fixes a Δv past the ceiling, and a new hull used to wipe the
+     * body's parking too.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     * @covers \NHA\State\LoopStrategyStateTrait::outOfReach
+     */
+    public function testABodyNoShipCanReachDoesNotStartAHullRebuild(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'thermal_core' => 1, 'copper' => 2020, 'metal' => 50, 'composite' => 10]);
+        $line = '';
+        (new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"ride","args":{}}'), $state))->step(142285, 'tok')
+            ->then(function (string $l) use (&$line): void {
+                $line = $l;
+            });
+
+        self::assertStringNotContainsString('dead-end hull', $line);
+
+        $state->clearDepartRejections(142285); // what a finalize does
+        self::assertSame(['triton'], $state->outOfReach(142285), 'a new hull does not bring Triton back');
+    }
+
+    /**
+     * The ladder's side of the same thing: told nothing, it read Triton (whose
+     * thermal_core is in the hold) as a body worth a hull, and its fallback
+     * for a vetoed pick went to gearing one ("ship — draw wire from copper").
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheLadderIsNotSentToGearAShipForABodyNoShipCanReach(): void
+    {
+        $state = new StateStore($this->statePath);
+        // The live hold at the time (tick 1,851,853).
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'carbon' => 389, 'oil' => 40, 'metal' => 250, 'composite' => 10,
+            'stimpack' => 1, 'kinetic_gun' => 1, 'slug' => 5, 'cryo_fuel' => 580, 'crystal' => 1652, 'iron' => 1655,
+            'copper' => 2020, 'silicon' => 1470, 'salt' => 703, 'brine' => 161, 'thermal_core' => 1, 'warp_container' => 5]);
+        $home['dynamic'] = [['sig' => 'carbon,oil']];
+        $line = '';
+        (new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"carbon":1,"oil":1}}}'), $state))->step(142285, 'tok')
+            ->then(function (string $l) use (&$line): void {
+                $line = $l;
+            });
+
+        self::assertStringNotContainsString('ship —', $line);
+        self::assertStringNotContainsString('dead-end hull', $line);
     }
 }
