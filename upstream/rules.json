@@ -1,0 +1,619 @@
+{
+    "note": "`combine{ingredients:{...}}` matches by the mixture's PHYSICS TAGS, not by the amounts you pass — one copy spends 1 of each matched ingredient. For an ALREADY-KNOWN recipe pass `n` to craft up to N copies in a single intent (e.g. `combine{ingredients:{silicon:1,copper:1},n:20}` → 20 chips), bounded by your stock and a per-intent cap; a brand-new invention still makes one.",
+    "resources": {
+        "algae": {
+            "coolant": 4,
+            "organic": 9,
+            "soluble": 7
+        },
+        "aluminum": {
+            "conductivity": 7,
+            "ductility": 6,
+            "light": 8,
+            "metal": 1,
+            "reactivity": 6
+        },
+        "brine": {
+            "soluble": 8,
+            "solvent": 6
+        },
+        "c_regolith": {
+            "carbon": 4,
+            "dusty": 1,
+            "hardness": 3
+        },
+        "carbon": {
+            "carbon": 9,
+            "energy": 8,
+            "flammable": 9,
+            "hardness": 5
+        },
+        "clean_ice": {
+            "coolant": 8,
+            "frozen": 1,
+            "solvent": 9
+        },
+        "cloud_acid": {
+            "acid_former": 9,
+            "reactive": 7,
+            "solvent": 3
+        },
+        "co2": {
+            "carbon_ox": 5,
+            "gas": 1
+        },
+        "coal": {
+            "carbon": 6,
+            "energy": 9,
+            "flammable": 9,
+            "hardness": 4
+        },
+        "copper": {
+            "conductivity": 9,
+            "ductility": 7,
+            "metal": 1,
+            "reactivity": 3
+        },
+        "cryo_brine": {
+            "coolant": 9,
+            "frozen": 1,
+            "salty": 4,
+            "solvent": 6
+        },
+        "crystal": {
+            "hardness": 8,
+            "insulator": 7,
+            "refraction": 9
+        },
+        "fungus": {
+            "organic": 7,
+            "potent": 8,
+            "soluble": 4,
+            "toxic": 5
+        },
+        "helium3": {
+            "energy": 10,
+            "flammable": 10,
+            "fusion": 1,
+            "light": 9
+        },
+        "herb": {
+            "medicinal": 6,
+            "organic": 8,
+            "soluble": 6
+        },
+        "ice": {
+            "coolant": 9,
+            "frozen": 1,
+            "solvent": 4
+        },
+        "iridium": {
+            "dense": 9,
+            "fusion": 1,
+            "hardness": 10,
+            "metal": 1
+        },
+        "iron": {
+            "conductivity": 5,
+            "dense": 6,
+            "hardness": 7,
+            "magnetic": 8,
+            "metal": 1,
+            "reactivity": 4
+        },
+        "lichen": {
+            "antiseptic": 7,
+            "frost": 3,
+            "medicinal": 4,
+            "organic": 6
+        },
+        "mars_ice": {
+            "coolant": 9,
+            "deuteric": 1,
+            "frozen": 1,
+            "solvent": 4
+        },
+        "mars_regolith": {
+            "dusty": 1,
+            "hardness": 4,
+            "silica": 1
+        },
+        "methane": {
+            "carbon": 4,
+            "energy": 8,
+            "flammable": 9,
+            "gas": 1
+        },
+        "nanohematite": {
+            "dusty": 1,
+            "iron_ox": 1,
+            "warming": 1
+        },
+        "neon": {
+            "gas": 1,
+            "inert": 9,
+            "light": 7,
+            "refraction": 6
+        },
+        "nickel": {
+            "dense": 5,
+            "hardness": 6,
+            "magnetic": 5,
+            "metal": 1
+        },
+        "nitrogen": {
+            "buffer": 1,
+            "gas": 1,
+            "inert": 1
+        },
+        "nitrogen_ice": {
+            "coolant": 9,
+            "frozen": 1,
+            "gas": 1,
+            "inert": 8
+        },
+        "oil": {
+            "energy": 9,
+            "flammable": 8,
+            "lubricant": 8
+        },
+        "ore": {
+            "hardness": 3,
+            "ore": 8
+        },
+        "perchlorate": {
+            "corrosive": 1,
+            "oxidizer": 8,
+            "oxygen_store": 1
+        },
+        "regolith": {
+            "dusty": 1,
+            "hardness": 5,
+            "lunar_moldable": 4
+        },
+        "salt": {
+            "ionic": 9,
+            "soluble": 9
+        },
+        "silicon": {
+            "hardness": 6,
+            "semiconductor": 8
+        },
+        "stickney_glass": {
+            "hardness": 6,
+            "piezo": 1,
+            "refraction": 4
+        },
+        "sulfur": {
+            "acid_former": 7,
+            "reactive": 8
+        },
+        "tholin": {
+            "carbon": 6,
+            "reactive": 5,
+            "tarry": 9
+        },
+        "titanium": {
+            "dense": 5,
+            "hardness": 9,
+            "light": 7,
+            "metal": 1
+        },
+        "void_pumice": {
+            "insulator": 5,
+            "light": 10,
+            "porous": 1
+        },
+        "water": {
+            "coolant": 6,
+            "solvent": 8
+        },
+        "wood": {
+            "energy": 5,
+            "flammable": 7,
+            "hardness": 3,
+            "light": 5
+        }
+    },
+    "recipes": {
+        "acid": {
+            "needs": "sulfur + water — a corrosive reagent",
+            "props": {
+                "acid_former": 9,
+                "reactive": 7,
+                "solvent": 4
+            }
+        },
+        "acid_skin": {
+            "needs": "acid + rubber — an H₂SO₄-proof hull coat for the Venus cloud deck",
+            "props": {
+                "acid_proof": 1,
+                "insulator": 6,
+                "shielding": 1
+            }
+        },
+        "alloy": {
+            "needs": "2 metals melted with heat",
+            "props": {
+                "hardness": 9,
+                "light": 5,
+                "metal": 1
+            }
+        },
+        "antidote": {
+            "needs": "an antiseptic plant (lichen/fungus) + acid or salt — a mild antiseptic heal",
+            "props": {
+                "antiseptic": 6,
+                "heal": 8
+            }
+        },
+        "barrel": {
+            "needs": "a hollow very-hard metal body (steel/superalloy + casing) — the gun body",
+            "props": {
+                "gunbody": 1,
+                "hardness": 8,
+                "hollow": 1,
+                "metal": 1,
+                "shaped": 1
+            }
+        },
+        "battery": {
+            "needs": "2 different metals (reactivity gap) + an electrolyte",
+            "props": {
+                "energy": 8,
+                "stores_power": 1
+            }
+        },
+        "bearing": {
+            "needs": "a metal + oil — a low-friction part",
+            "props": {
+                "low_friction": 1,
+                "lubricant": 8,
+                "metal": 1
+            }
+        },
+        "bomb": {
+            "needs": "an explosive (gunpowder) packed in a container (casing) — a single-use charge",
+            "props": {
+                "energy": 8,
+                "explosive": 1,
+                "unstable": 1,
+                "weapon": 1
+            }
+        },
+        "casing": {
+            "needs": "plastic + a metal frame — a shell / container / tank",
+            "props": {
+                "container": 1,
+                "hollow": 1,
+                "insulator": 5,
+                "light": 6
+            }
+        },
+        "chip": {
+            "needs": "semiconductor + conductor",
+            "props": {
+                "logic": 1,
+                "semiconductor": 9
+            }
+        },
+        "composite": {
+            "needs": "a light metal (aluminium) + carbon — carbon-fibre, strong and light",
+            "props": {
+                "hardness": 8,
+                "light": 9,
+                "shaped": 1
+            }
+        },
+        "cryo_fuel": {
+            "needs": "ice (frozen) + an energy source, no metal — cold rocket fuel",
+            "props": {
+                "coolant": 8,
+                "energy": 9,
+                "frozen": 1
+            }
+        },
+        "electrolyte": {
+            "needs": "a solvent + something ionic/acidic (salt or sulfur + water)",
+            "props": {
+                "ionic": 8,
+                "solvent": 7
+            }
+        },
+        "electromagnet": {
+            "needs": "magnetic metal + conductor + battery",
+            "props": {
+                "magnetic": 10,
+                "powered": 1
+            }
+        },
+        "energy_cell": {
+            "needs": "a power store (battery) charged with a lens or a high-energy fuel — beam ammo",
+            "props": {
+                "charged": 1,
+                "energy": 9,
+                "stores_power": 1
+            }
+        },
+        "energy_weapon": {
+            "needs": "a charged cell + a lens (refraction) + a conductor — a beam weapon",
+            "props": {
+                "beam": 1,
+                "energy": 1,
+                "refraction": 6,
+                "weapon": 1
+            }
+        },
+        "engine": {
+            "needs": "fuel (energy) + a hard metal frame",
+            "props": {
+                "burns_fuel": 1,
+                "power": 1
+            }
+        },
+        "extract": {
+            "needs": "a plant (herb/lichen/fungus/algae) steeped in a solvent (water) — a base medicine",
+            "props": {
+                "medicinal": 7,
+                "organic": 6,
+                "soluble": 8
+            }
+        },
+        "glass": {
+            "needs": "silicon or crystal + heat",
+            "props": {
+                "insulator": 8,
+                "refraction": 5,
+                "transparent": 1
+            }
+        },
+        "graphite": {
+            "needs": "co2 (mined at Mars/Venus) reduced with a fuel (heat) — structural carbon from thin air; feeds composite + colony builds",
+            "props": {
+                "carbon": 9,
+                "conductivity": 4,
+                "hardness": 4,
+                "shaped": 1
+            }
+        },
+        "gunpowder": {
+            "needs": "an acid-former (sulfur) + carbon, fired with heat — propellant",
+            "props": {
+                "energy": 7,
+                "explosive": 4,
+                "flammable": 9,
+                "reactive": 9
+            }
+        },
+        "heat_shield": {
+            "needs": "a superalloy (heat-proof) + a composite (shaped, hard) — an ablative re-entry shield for Mars/Venus arrival",
+            "props": {
+                "ablative": 1,
+                "hardness": 9,
+                "shaped": 1,
+                "sheds_heat": 1
+            }
+        },
+        "hydrogen": {
+            "needs": "water electrolysed by a power source (a motor/engine, no metal) — the Venus-oceans feedstock",
+            "props": {
+                "gas": 1,
+                "light": 10,
+                "reductant": 1,
+                "volatile": 1
+            }
+        },
+        "insulated_wire": {
+            "needs": "wire + plastic — a safe insulated conductor",
+            "props": {
+                "conductivity": 9,
+                "insulator": 8,
+                "shaped": 1
+            }
+        },
+        "ion_thruster": {
+            "needs": "a fusion fuel (helium3/iridium) + a motor (power) + a semiconductor — orbital drive",
+            "props": {
+                "light": 1,
+                "power": 2,
+                "thrust_field": 1
+            }
+        },
+        "kinetic_gun": {
+            "needs": "a barrel + a slug + gunpowder — a firearm that fires slugs",
+            "props": {
+                "firearm": 1,
+                "hardness": 7,
+                "kinetic": 1,
+                "weapon": 1
+            }
+        },
+        "lens": {
+            "needs": "a highly refractive material",
+            "props": {
+                "focus": 1,
+                "refraction": 10
+            }
+        },
+        "magnet": {
+            "needs": "a magnetic metal, worked",
+            "props": {
+                "magnetic": 9,
+                "metal": 1
+            }
+        },
+        "mars_brick": {
+            "needs": "mars_regolith sintered with a fuel (heat) — dome shell + radiation shield",
+            "props": {
+                "hardness": 6,
+                "shaped": 1,
+                "shield": 1,
+                "sintered": 1
+            }
+        },
+        "medkit": {
+            "needs": "a salve + a tincture packed in a casing/plastic — a strong heal that can revive",
+            "props": {
+                "heal": 60,
+                "revive": 1
+            }
+        },
+        "metal": {
+            "needs": "raw ore smelted with a fuel (ore + coal / wood / oil)",
+            "props": {
+                "dense": 4,
+                "hardness": 6,
+                "metal": 1
+            }
+        },
+        "motor": {
+            "needs": "a magnet + a conductor + a battery",
+            "props": {
+                "kinetic": 1,
+                "power": 1
+            }
+        },
+        "o2": {
+            "needs": "perchlorate (Mars) scrubbed with water or heat — breathable oxygen for terraforming",
+            "props": {
+                "breathable": 1,
+                "gas": 1,
+                "oxygen": 1
+            }
+        },
+        "observatory": {
+            "needs": "a lens + a chip — a forecasting instrument (see the storm's future track in observe.forecast)",
+            "props": {
+                "instrument": 1,
+                "logic": 1,
+                "optics": 1
+            }
+        },
+        "plastic": {
+            "needs": "oil + carbon — a polymer (insulation, light casings)",
+            "props": {
+                "insulator": 7,
+                "light": 6,
+                "moldable": 8
+            }
+        },
+        "radar": {
+            "needs": "a finished magnet (or electromagnet) + a chip — a sensor that WIDENS your sight (bigger nearby_agents/threat radius in observe.vision)",
+            "props": {
+                "detects": 1,
+                "instrument": 1,
+                "sensor": 1
+            }
+        },
+        "rubber": {
+            "needs": "sulfur + plastic — vulcanised rubber (tyres, seals)",
+            "props": {
+                "elastic": 1,
+                "grip": 8,
+                "insulator": 6,
+                "moldable": 4
+            }
+        },
+        "salt": {
+            "needs": "boil brine (sea water) dry with a fuel — sea salt",
+            "props": {
+                "ionic": 9,
+                "soluble": 9
+            }
+        },
+        "salve": {
+            "needs": "a medicinal plant + water, cooked with heat — a mild topical heal",
+            "props": {
+                "antiseptic": 8,
+                "heal": 15,
+                "topical": 1
+            }
+        },
+        "slug": {
+            "needs": "a dense hard metal (steel/iridium/titanium), no heat — kinetic shot",
+            "props": {
+                "dense": 9,
+                "hardness": 9,
+                "kinetic": 1,
+                "metal": 1,
+                "projectile": 1
+            }
+        },
+        "solar_cell": {
+            "needs": "semiconductor + insulator + conductor",
+            "props": {
+                "passive_energy": 1,
+                "semiconductor": 5
+            }
+        },
+        "steam": {
+            "needs": "water heated by a fuel (coal / wood / oil / carbon)",
+            "props": {
+                "energy": 5,
+                "hot": 1,
+                "pressure": 6
+            }
+        },
+        "steel": {
+            "needs": "iron (a metal) + carbon, smelted hard",
+            "props": {
+                "dense": 8,
+                "hardness": 10,
+                "magnetic": 3,
+                "metal": 1
+            }
+        },
+        "stimpack": {
+            "needs": "a tincture + a power charge (battery) — a fast heal plus a short buff",
+            "props": {
+                "buff": 1,
+                "heal": 35,
+                "potent": 8
+            }
+        },
+        "superalloy": {
+            "needs": "two dense metals melted with heat — an apex frame material",
+            "props": {
+                "dense": 7,
+                "hardness": 12,
+                "heat_proof": 1,
+                "light": 6,
+                "metal": 1
+            }
+        },
+        "thermal_core": {
+            "needs": "a battery + mars_ice + a NON-magnetic metal (titanium/aluminum/copper — iron resolves to a motor first) — survives the outer-system cold; required in hold for Enceladus, Titan and Triton",
+            "props": {
+                "insulator": 9,
+                "power": 1,
+                "shielding": 1,
+                "warm": 1
+            }
+        },
+        "tincture": {
+            "needs": "an extract fixed with salt or acid — a concentrated base medicine",
+            "props": {
+                "antiseptic": 5,
+                "medicinal": 8,
+                "potent": 6
+            }
+        },
+        "warp_container": {
+            "needs": "a superalloy (heat-proof) + a chip (logic) + an acid_skin (acid-proof seal) — a single-use stasis crate; the only way exotic body cargo crosses a warp gate",
+            "props": {
+                "hardness": 9,
+                "hollow": 1,
+                "shielding": 1,
+                "stasis": 1
+            }
+        },
+        "wire": {
+            "needs": "a ductile conductor metal (copper/aluminum), drawn out",
+            "props": {
+                "conductivity": 9,
+                "metal": 1,
+                "shaped": 1
+            }
+        }
+    }
+}

@@ -1,0 +1,53 @@
+name: Upstream watch
+
+# Compares the live NHA server (rule-update feed, API contract, crafting codex,
+# colony bills) and its public engine source with the baseline this code was
+# written against (upstream/*.json, openapi.json), and keeps one issue labelled
+# `upstream-drift` in step with the difference. See upstream-watch.php.
+
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what it would do to the issue, and write nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, zlib
+          coverage: none
+
+      # Same resolution as ci.yml.
+      - name: Fetch sibling libraries
+        run: |
+          git clone --depth 1 https://github.com/discord-php/DiscordPHP.git ../DiscordPHP
+          git clone --depth 1 https://github.com/discord-php/DiscordPHP-Http.git ../DiscordPHP-Http
+
+      - name: Install dependencies
+        run: COMPOSER_ROOT_VERSION=dev-main composer install --no-interaction --prefer-dist --no-progress --no-dev
+
+      - name: Compare the live server with the baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: php upstream-watch.php --issue $DRY_RUN

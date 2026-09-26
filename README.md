@@ -78,6 +78,35 @@ SemVer, with the **major tracking the NHA world API** it targets
 against NHA API **v3**. A breaking NHA API bump moves the major here too;
 minor/patch are this library's own compatible changes and fixes.
 
+## Watching the server for rule changes
+
+The NHA server changes its rules under running clients. `upstream-watch.php`
+compares it with the baseline this code was written against and says what moved:
+
+| Source | Read from | Baseline |
+| --- | --- | --- |
+| Operator rule updates | `GET /updates` | `upstream/updates.json` |
+| API contract | `GET /openapi.json` | `openapi.json` |
+| Crafting codex (resources, recipes; not player inventions) | `GET /rules` | `upstream/rules.json` |
+| Colony and terraform bills (not deliveries) | `GET /expansion` | `upstream/colonies.json` |
+| Engine source (new commits, and the constants they touch) | `github.com/Recluse/nha-mmo` | `upstream/source.json` |
+
+```
+composer upstream:check                          # report what moved; exit 1 if anything did
+php upstream-watch.php --issue [--dry-run]       # open, rewrite or close the drift issue on GitHub
+composer upstream:accept                         # after updating the code: take the live server as the baseline
+php upstream-watch.php --accept=rules,source     # ...or only the parts you handled
+```
+
+`.github/workflows/upstream-watch.yml` runs `--issue` every three hours. It keeps one
+issue labelled `upstream-drift`: opened when the server first moves, rewritten (with a
+comment) when it moves again, and closed once a commit brings the baseline back in line.
+The issue body is written as a brief for whoever updates the code, a model included:
+what moved, quoted in full, and where in this repository each kind of change lands.
+
+Writing the issue needs `GH_TOKEN` (or `GITHUB_TOKEN`) with `issues: write`; reads work
+without one. The issue goes to `GITHUB_REPOSITORY`, or `--repo=owner/name`.
+
 ## LLM autoplay (Ollama)
 
 Point the bot at an `ollama serve` instance and it can decide and perform actions itself.

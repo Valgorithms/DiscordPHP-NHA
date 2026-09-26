@@ -1,0 +1,448 @@
+{
+    "era": "accord",
+    "bodies": {
+        "deimos": {
+            "label": "Forward Base (Deimos)",
+            "cap_pct_per_agent": 60,
+            "min_funders_per_module": 2,
+            "modules": {
+                "anchor_truss": {
+                    "label": "Anchor Truss",
+                    "need": {
+                        "c_regolith": 120,
+                        "metal": 200,
+                        "titanium": 60
+                    }
+                },
+                "cracker": {
+                    "label": "Ice Cracker",
+                    "need": {
+                        "c_regolith": 100,
+                        "chip": 20,
+                        "crystal": 60,
+                        "metal": 180
+                    }
+                },
+                "depot": {
+                    "label": "Propellant Depot",
+                    "need": {
+                        "c_regolith": 140,
+                        "composite": 80,
+                        "titanium": 120
+                    }
+                },
+                "mass_driver": {
+                    "label": "Mass Driver",
+                    "need": {
+                        "c_regolith": 100,
+                        "chip": 80,
+                        "nickel": 120,
+                        "superalloy": 160
+                    }
+                }
+            }
+        },
+        "enceladus": {
+            "label": "Tiger Stripe Station",
+            "cap_pct_per_agent": 60,
+            "min_funders_per_module": 2,
+            "modules": {
+                "ice_anchor": {
+                    "label": "Ice Anchor",
+                    "need": {
+                        "clean_ice": 140,
+                        "metal": 220,
+                        "titanium": 80
+                    }
+                },
+                "life_plant": {
+                    "label": "Life-Support Plant",
+                    "need": {
+                        "chip": 60,
+                        "clean_ice": 180,
+                        "crystal": 100,
+                        "titanium": 150
+                    }
+                },
+                "plume_tap": {
+                    "label": "Plume Tap",
+                    "need": {
+                        "chip": 40,
+                        "composite": 120,
+                        "cryo_brine": 160
+                    }
+                }
+            }
+        },
+        "mars": {
+            "label": "Ares Base",
+            "cap_pct_per_agent": 40,
+            "min_funders_per_module": 3,
+            "modules": {
+                "greenhouse": {
+                    "label": "Greenhouse",
+                    "need": {
+                        "chip": 120,
+                        "crystal": 350,
+                        "ice": 150,
+                        "mars_ice": 300,
+                        "silicon": 400
+                    }
+                },
+                "isru_plant": {
+                    "label": "ISRU Plant",
+                    "need": {
+                        "chip": 200,
+                        "crystal": 300,
+                        "mars_ice": 400,
+                        "perchlorate": 200,
+                        "titanium": 500
+                    }
+                },
+                "landing_pad": {
+                    "label": "Landing Pad",
+                    "need": {
+                        "chip": 80,
+                        "composite": 260,
+                        "metal": 900,
+                        "titanium": 400
+                    }
+                },
+                "pressure_hab": {
+                    "label": "Pressure Hab",
+                    "need": {
+                        "chip": 100,
+                        "composite": 200,
+                        "ice": 200,
+                        "mars_regolith": 500,
+                        "metal": 800
+                    }
+                },
+                "reactor": {
+                    "label": "Reactor",
+                    "need": {
+                        "chip": 220,
+                        "crystal": 400,
+                        "iridium": 80,
+                        "mars_regolith": 300,
+                        "titanium": 450
+                    }
+                }
+            },
+            "terraform": {
+                "biosphere": {
+                    "cap_pct_per_agent": 13,
+                    "flagship": true,
+                    "index_effect": {
+                        "biosphere": 1
+                    },
+                    "label": "Seed the Biosphere",
+                    "min_funders": 8,
+                    "need": {
+                        "algae": 800,
+                        "herb": 600,
+                        "ice": 700,
+                        "o2": 1000
+                    },
+                    "sustain": 0
+                },
+                "thicken": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "pressure": 1
+                    },
+                    "label": "Thicken the Atmosphere",
+                    "min_funders": 5,
+                    "need": {
+                        "co2": 1200,
+                        "mars_brick": 300,
+                        "nitrogen": 500,
+                        "o2": 400,
+                        "perchlorate": 400
+                    },
+                    "sustain": 0
+                },
+                "warm": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "warmth": 1
+                    },
+                    "label": "Warm the Poles",
+                    "min_funders": 5,
+                    "need": {
+                        "aluminum": 500,
+                        "co2": 600,
+                        "composite": 300,
+                        "glass": 400,
+                        "nanohematite": 400
+                    },
+                    "sustain": 50
+                },
+                "water": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "water": 1
+                    },
+                    "label": "Liquid Water",
+                    "min_funders": 5,
+                    "need": {
+                        "ice": 1600,
+                        "iridium": 120,
+                        "mars_ice": 800,
+                        "nickel": 300,
+                        "superalloy": 200
+                    },
+                    "sustain": 50
+                }
+            }
+        },
+        "phobos": {
+            "label": "Forward Base (Phobos)",
+            "cap_pct_per_agent": 60,
+            "min_funders_per_module": 2,
+            "modules": {
+                "anchor_truss": {
+                    "label": "Anchor Truss",
+                    "need": {
+                        "c_regolith": 120,
+                        "metal": 200,
+                        "titanium": 60
+                    }
+                },
+                "cracker": {
+                    "label": "Ice Cracker",
+                    "need": {
+                        "c_regolith": 100,
+                        "chip": 20,
+                        "crystal": 60,
+                        "metal": 180
+                    }
+                },
+                "depot": {
+                    "label": "Propellant Depot",
+                    "need": {
+                        "c_regolith": 140,
+                        "composite": 80,
+                        "titanium": 120
+                    }
+                },
+                "mass_driver": {
+                    "label": "Mass Driver",
+                    "need": {
+                        "c_regolith": 100,
+                        "chip": 80,
+                        "nickel": 120,
+                        "superalloy": 160
+                    }
+                }
+            }
+        },
+        "titan": {
+            "label": "Kraken Harbour",
+            "cap_pct_per_agent": 40,
+            "min_funders_per_module": 3,
+            "modules": {
+                "cryo_hab": {
+                    "label": "Cryogenic Hab",
+                    "need": {
+                        "chip": 90,
+                        "clean_ice": 200,
+                        "composite": 250,
+                        "metal": 400
+                    }
+                },
+                "harbour_pad": {
+                    "label": "Harbour Pad",
+                    "need": {
+                        "chip": 60,
+                        "composite": 180,
+                        "metal": 500,
+                        "titanium": 260
+                    }
+                },
+                "haze_lab": {
+                    "label": "Haze Laboratory",
+                    "need": {
+                        "chip": 180,
+                        "crystal": 300,
+                        "silicon": 250,
+                        "tholin": 250
+                    }
+                },
+                "methane_works": {
+                    "label": "Methane Works",
+                    "need": {
+                        "chip": 150,
+                        "crystal": 200,
+                        "methane": 400,
+                        "titanium": 350
+                    }
+                }
+            }
+        },
+        "triton": {
+            "label": "Geyser Watch",
+            "cap_pct_per_agent": 60,
+            "min_funders_per_module": 2,
+            "modules": {
+                "cryo_vault": {
+                    "label": "Cryo Vault",
+                    "need": {
+                        "chip": 120,
+                        "composite": 300,
+                        "crystal": 200,
+                        "nitrogen_ice": 250
+                    }
+                },
+                "geyser_mast": {
+                    "label": "Geyser Mast",
+                    "need": {
+                        "nitrogen_ice": 200,
+                        "superalloy": 180,
+                        "titanium": 200
+                    }
+                },
+                "neon_array": {
+                    "label": "Neon Array",
+                    "need": {
+                        "chip": 200,
+                        "crystal": 350,
+                        "iridium": 90,
+                        "neon": 180
+                    }
+                }
+            }
+        },
+        "venus": {
+            "label": "Aphrodite Terrace",
+            "cap_pct_per_agent": 40,
+            "min_funders_per_module": 3,
+            "modules": {
+                "acid_shield": {
+                    "label": "Acid Shield",
+                    "need": {
+                        "acid_skin": 400,
+                        "chip": 100,
+                        "cloud_acid": 300,
+                        "composite": 300
+                    }
+                },
+                "keel_envelope": {
+                    "label": "Keel Envelope",
+                    "need": {
+                        "acid_skin": 300,
+                        "composite": 400,
+                        "nitrogen": 400,
+                        "titanium": 500
+                    }
+                },
+                "sky_farm": {
+                    "label": "Sky Farm",
+                    "need": {
+                        "chip": 120,
+                        "co2": 300,
+                        "crystal": 400,
+                        "graphite": 350,
+                        "mars_ice": 400
+                    }
+                },
+                "sky_hab": {
+                    "label": "Sky Habitat",
+                    "need": {
+                        "chip": 150,
+                        "composite": 250,
+                        "graphite": 400,
+                        "ice": 300,
+                        "nitrogen": 500
+                    }
+                },
+                "sky_lab": {
+                    "label": "Sky Lab",
+                    "need": {
+                        "acid_skin": 200,
+                        "chip": 260,
+                        "crystal": 500,
+                        "iridium": 100,
+                        "silicon": 450
+                    }
+                },
+                "water_import": {
+                    "label": "Water Import",
+                    "need": {
+                        "ice": 400,
+                        "mars_ice": 800
+                    }
+                }
+            },
+            "terraform": {
+                "freeze": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "pressure": 1
+                    },
+                    "label": "Freeze Out the CO₂",
+                    "min_funders": 5,
+                    "need": {
+                        "cloud_acid": 600,
+                        "crystal": 400,
+                        "graphite": 500,
+                        "nitrogen": 600
+                    },
+                    "sustain": 0
+                },
+                "oceans": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "water": 1
+                    },
+                    "label": "Import Hydrogen → Oceans",
+                    "min_funders": 5,
+                    "need": {
+                        "graphite": 600,
+                        "hydrogen": 1000,
+                        "ice": 600,
+                        "mars_ice": 1200
+                    },
+                    "sustain": 50
+                },
+                "soletta": {
+                    "cap_pct_per_agent": 13,
+                    "flagship": true,
+                    "index_effect": {
+                        "light": 1
+                    },
+                    "label": "Soletta Day/Night Ring",
+                    "min_funders": 8,
+                    "need": {
+                        "composite": 1000,
+                        "crystal": 700,
+                        "glass": 800,
+                        "iridium": 150
+                    },
+                    "sustain": 0
+                },
+                "sunshade": {
+                    "cap_pct_per_agent": 20,
+                    "flagship": false,
+                    "index_effect": {
+                        "temperature": 1
+                    },
+                    "label": "Sun–Venus L1 Sunshade",
+                    "min_funders": 5,
+                    "need": {
+                        "acid_skin": 300,
+                        "aluminum": 800,
+                        "composite": 800,
+                        "glass": 600
+                    },
+                    "sustain": 0
+                }
+            }
+        }
+    }
+}

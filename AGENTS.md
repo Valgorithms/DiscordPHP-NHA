@@ -801,6 +801,10 @@ For DiscordPHP builder, interaction, repository, gateway, type-map, or voice int
 | PHPUnit 9 suite | `composer unit` |
 | project code style | `composer cs` |
 | Pint formatting for `src` | `composer pint` |
+| what the live NHA server changed since this code's baseline | `composer upstream:check` |
+| take the live NHA server as the new baseline, after updating the code | `composer upstream:accept` (or `php upstream-watch.php --accept=rules,source`) |
+
+An open issue labelled `upstream-drift` is a task: the live NHA server changed a rule, route or payload this code relies on. Its body says what moved and where in this repository each change lands. Update the code, then accept the baseline in the same commit; the next scheduled check closes the issue.
 
 Live integration tests require `DISCORD_TOKEN` or `TOKEN` and `TEST_CHANNEL`; ordinary unit tests must remain safe without live credentials.
 

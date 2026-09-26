@@ -6,6 +6,39 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-09-26
+
+### Added
+- **The server's rule changes become an issue, not a surprise.**
+  `upstream-watch.php` (`composer upstream:check`) compares the live NHA server
+  with the baseline this code was written against. It covers the operator
+  rule-update feed (`/updates`), the API contract (`/openapi.json`), the
+  crafting codex (`/rules`), the colony and terraform bills (`/expansion`) and
+  the public engine source (`Recluse/nha-mmo`). Each is reduced to its rules
+  (`NHA\Upstream\Snapshot`): player inventions, deliveries and discoverers
+  are left out, so a difference means the rules moved, not that the game was
+  played. `NHA\Upstream\Drift` then says what each rule is now: operator
+  updates quoted in full, reworded documentation as a diff, a changed bill
+  with its old and new amounts, and new engine commits with the constants
+  their patches assign.
+- `.github/workflows/upstream-watch.yml` runs it every three hours with
+  `--issue` and keeps one issue labelled `upstream-drift` in step: opened when
+  the server moves, rewritten with a comment when it moves again, closed when
+  the baseline catches up. The body is a brief for whoever updates the code,
+  saying where in this repository each kind of change lands. After updating,
+  `composer upstream:accept` (or `--accept=rules,source`) makes the live
+  server the new baseline (`upstream/*.json`, `openapi.json`).
+- `Endpoint::OPENAPI`.
+
+### Fixed
+- **The committed `openapi.json` was mojibake.** It had once been decoded as
+  Windows-1252 and saved again, so every `—` read `â€”`: 24 strings, which
+  made seven schemas look changed. It is repaired, not refreshed, so it is
+  still the contract the code was written against. The first check therefore
+  reports the real drift since then: `GET /vault`, `GET /treasury`, a `token`
+  on `/observe` that unlocks the agent's Vault fragments, an `agent` filter on
+  `/log`, and the documented intent rate limit.
+
 ## [3.22.1] - 2026-09-26
 
 ### Fixed

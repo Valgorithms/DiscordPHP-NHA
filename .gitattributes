@@ -22,3 +22,5 @@
 /mac               export-ignore
 /windows           export-ignore
 /phpdoc.dist.xml     export-ignore
+/upstream-watch.php  export-ignore
+/upstream            export-ignore

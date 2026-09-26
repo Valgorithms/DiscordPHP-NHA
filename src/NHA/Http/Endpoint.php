@@ -170,6 +170,16 @@ class Endpoint implements EndpointInterface
     /** `GET` the arena board (free-form schema). @link https://nha.recluse.lol/docs#/history/arena_arena_get */
     public const ARENA = 'arena';
 
+    /**
+     * `GET` the machine-readable API contract itself. It is served beside the
+     * paths rather than listed among them.
+     *
+     * @link https://nha.recluse.lol/openapi.json
+     *
+     * @since 3.23.0
+     */
+    public const OPENAPI = 'openapi.json';
+
 
     /**
      * Regex to identify parameters in endpoints.
