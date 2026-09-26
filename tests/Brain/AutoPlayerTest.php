@@ -3307,4 +3307,27 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertSame(['side' => 'sell', 'resource' => 'c_regolith', 'qty' => 260, 'price' => 1], $this->posts[0][1]['args']);
         self::assertFalse($state->supplyRunPaused(142285, 1_829_400));
     }
+
+    /**
+     * The same, end to end: on Mars with the core made, the run takes the
+     * turn home instead of handing it to the finished-colony machine, which
+     * held for a window the gate does not need and called `distress`.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testWithTheGearMadeTheRunTakesItHome(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, ['triton']);
+
+        $onMars = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false,
+            'expansion' => ['location' => 'on_mars', 'at_body' => 'mars', 'gates' => ['linked_from_here' => ['earth']]]]);
+        $onMars['inventory'] = ['credits' => 418017, 'thermal_core' => 1, 'warp_container' => 5, 'c_regolith' => 70, 'cryo_fuel' => 500];
+        $player = new AutoPlayer($this->nhaWith($onMars), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame(['depart', ['dest' => 'earth']], [$this->posts[0][1]['verb'], $this->posts[0][1]['args']]);
+        self::assertSame('supply', $player->lastTurn(142285)['source']);
+    }
 }

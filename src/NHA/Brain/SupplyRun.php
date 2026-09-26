@@ -103,16 +103,23 @@ final class SupplyRun
     public static function need(array $raw, array $colonyDone, array $unfounded): ?array
     {
         $inv = (array) ($raw['inventory'] ?? []);
+        $here = Ladder::atBody($raw);
         foreach (Bodies::all($raw) as $dest => $b) {
             if (! in_array($dest, $unfounded, true) || in_array($dest, $colonyDone, true)) {
                 continue;
             }
             foreach ((array) ($b['needs_in_hold'] ?? []) as $item) {
-                if ((int) ($inv[$item] ?? 0) >= 1) {
-                    continue;
-                }
                 foreach (array_keys(self::ON_SITE[$item] ?? []) as $input) {
-                    if (($bodies = GameData::minedOn((string) $input)) !== []) {
+                    if (($bodies = GameData::minedOn((string) $input)) === []) {
+                        continue;
+                    }
+                    // Missing: go and get it. Held but still on the supply
+                    // body: the run is not over until it is home. Live, the
+                    // first run made its thermal_core on Mars and stopped
+                    // right there; the finished-colony machine then held for
+                    // a window the gate does not need, hit its strand limit,
+                    // and called `distress` (-20 HP, the Mars haul jettisoned).
+                    if ((int) ($inv[$item] ?? 0) < 1 || $here === $bodies[0]) {
                         return ['item' => (string) $item, 'resource' => (string) $input, 'body' => $bodies[0]];
                     }
                 }

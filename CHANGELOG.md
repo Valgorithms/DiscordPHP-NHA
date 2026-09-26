@@ -6,6 +6,20 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.20.1] - 2026-09-25
+
+### Fixed
+- **The supply run stopped on Mars.** The first live run packed, shed
+  3,717,052 `c_regolith`, warped to Mars on 3 crates, mined and made its
+  `thermal_core` — and then handed the turn back, because `need()` only fired
+  while the gear was missing. The finished-colony machine held for a window
+  the gate does not need, hit its strand limit and called `distress` (-20 HP;
+  the leftover Mars cargo jettisoned; the thermal_core, not exotic cargo, came
+  home). The run now lasts until the gear is home: held but still on the supply
+  body counts as running, so the return leg it already had is actually reached.
+  The earlier tests called that leg directly, never through `need()`; the new
+  ones go through it.
+
 ## [3.20.0] - 2026-09-25
 
 ### Added

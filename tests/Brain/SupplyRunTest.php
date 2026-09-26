@@ -189,4 +189,24 @@ class SupplyRunTest extends NHAUnitTestCase
         self::assertNull(SupplyRun::step($this->world(['expansion' => ['transit' => ['to' => 'mars']]]), self::NEED));
         self::assertNull(SupplyRun::step($this->world(['expansion' => ['at_body' => 'venus']]), self::NEED));
     }
+
+    /**
+     * Live: the run made its thermal_core on Mars and stopped right there,
+     * because the gear was no longer missing. Until the agent is home the run
+     * is not over — and every earlier test called the return leg directly,
+     * never through need().
+     *
+     * @covers \NHA\Brain\SupplyRun::need
+     * @covers \NHA\Brain\SupplyRun::step
+     */
+    public function testTheRunLastsUntilTheGearIsHome(): void
+    {
+        $madeOnMars = $this->onMars(['thermal_core' => 1, 'warp_container' => 5, 'c_regolith' => 70, 'mars_ice' => 5]);
+
+        $need = SupplyRun::need($madeOnMars, ['deimos', 'mars'], ['triton']);
+        self::assertSame(self::NEED, $need, 'still on Mars with it: still running');
+        self::assertSame(['depart', ['dest' => 'earth']], [SupplyRun::step($madeOnMars, $need)['verb'], SupplyRun::step($madeOnMars, $need)['args']]);
+
+        self::assertNull(SupplyRun::need($this->world([], ['thermal_core' => 1]), ['deimos', 'mars'], ['triton']), 'home with it: done');
+    }
 }
