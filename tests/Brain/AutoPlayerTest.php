@@ -3472,6 +3472,27 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Live after 3.22.0: the loop breaker had already eaten the one
+     * thermal_core (`brine+thermal_core`, 02:56:43), and with Triton parked
+     * the run would not make another — so a fix to Triton's Δv would have
+     * found the agent unable to board. The gear is remade while it waits.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testALostCoreIsRemadeWhileTritonIsOutOfReach(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 418017, 'heat_shield' => 1, 'copper' => 10, 'metal' => 50, 'salt' => 50, 'silicon' => 50]);
+        $state->recordUnfounded(142285, ['triton']);
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame('supply', $player->lastTurn(142285)['source']);
+        self::assertSame(['metal' => 1, 'salt' => 1, 'silicon' => 1], $this->posts[0][1]['args']['ingredients'], 'the batteries it packs for Mars');
+        self::assertSame(['triton'], $state->outOfReach(142285), 'still parked: the run does not fly there');
+    }
+
+    /**
      * The thermal_core cost a trip to Mars and is the one thing Triton asks
      * for; a research combine must never eat it.
      *

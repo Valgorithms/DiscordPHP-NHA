@@ -94,21 +94,24 @@ final class SupplyRun
      * one refuses money until someone lands and lays it, which is the one
      * thing only the trip can do.
      *
-     * @param array<string,mixed> $raw         The observation (its destinations' `needs_in_hold`).
-     * @param list<string>        $colonyDone  Bodies whose colony is finished.
-     * @param list<string>        $unfounded   Bodies whose colony nobody has laid yet.
-     * @param list<string>        $unreachable Bodies the engine has refused for good — Triton,
-     *                                         past the Δv any ship can make. Gear for a trip
-     *                                         that cannot be flown is not worth a run.
+     * A destination no ship can reach today still counts (3.22.1). Reach is the
+     * engine's number and a fix would change it; the gear takes a trip to Mars
+     * to make. Holding it is what being ready for that fix means — 3.21.0 had
+     * skipped such bodies, and the one core the agent held was later spent by
+     * the loop breaker with nothing to replace it.
+     *
+     * @param array<string,mixed> $raw        The observation (its destinations' `needs_in_hold`).
+     * @param list<string>        $colonyDone Bodies whose colony is finished.
+     * @param list<string>        $unfounded  Bodies whose colony nobody has laid yet.
      *
      * @return array{item: string, resource: string, body: string}|null
      */
-    public static function need(array $raw, array $colonyDone, array $unfounded, array $unreachable = []): ?array
+    public static function need(array $raw, array $colonyDone, array $unfounded): ?array
     {
         $inv = (array) ($raw['inventory'] ?? []);
         $here = Ladder::atBody($raw);
         foreach (Bodies::all($raw) as $dest => $b) {
-            if (! in_array($dest, $unfounded, true) || in_array($dest, $colonyDone, true) || in_array($dest, $unreachable, true)) {
+            if (! in_array($dest, $unfounded, true) || in_array($dest, $colonyDone, true)) {
                 continue;
             }
             foreach ((array) ($b['needs_in_hold'] ?? []) as $item) {

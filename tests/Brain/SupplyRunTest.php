@@ -211,12 +211,14 @@ class SupplyRunTest extends NHAUnitTestCase
     }
 
     /**
-     * Gear for a trip no ship can make is not worth a run.
+     * Ready for a fix: the gear is made even while no ship can reach the body,
+     * because a balance change would open it and the core takes a trip to
+     * Mars to make.
      *
      * @covers \NHA\Brain\SupplyRun::need
      */
-    public function testNoRunForABodyNoShipCanReach(): void
+    public function testTheGearIsMadeEvenWhileTheBodyIsOutOfReach(): void
     {
-        self::assertNull(SupplyRun::need($this->world(), ['deimos', 'mars'], ['triton'], ['triton']));
+        self::assertSame(self::NEED, SupplyRun::need($this->world(), ['deimos', 'mars'], ['triton']));
     }
 }

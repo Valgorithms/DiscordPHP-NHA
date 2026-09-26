@@ -6,6 +6,18 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.22.1] - 2026-09-26
+
+### Fixed
+- **The agent was not ready for the fix 3.22.0 prepared it for.** The loop
+  breaker ate the one thermal_core (`brine+thermal_core`) before 3.22.0 fenced
+  it off, and since 3.21.0 the supply run skipped bodies no ship can reach, so
+  nothing would make another. Had Triton's Δv come down, the agent would have
+  been sent there without the thing it needs to board. The run now makes the
+  gear for an unfounded body whether or not it is in reach today:
+  `SupplyRun::need()` drops its `$unreachable` argument. Reach is still what
+  decides whether the agent flies there.
+
 ## [3.22.0] - 2026-09-26
 
 ### Added

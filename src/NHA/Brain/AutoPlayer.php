@@ -768,7 +768,7 @@ final class AutoPlayer
         if ($this->state->supplyRunPaused($agent_id, $tick)) {
             return null;
         }
-        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id), $this->state->departUnreachable($agent_id));
+        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id));
         if ($need === null) {
             return null;
         }
