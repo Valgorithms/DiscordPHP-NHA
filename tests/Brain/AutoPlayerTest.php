@@ -3231,4 +3231,80 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertStringContainsString('🗺️ step 2/4 done (seen in the observation) — next: be at mars', $line);
         self::assertSame('3/4', $player->lastTurn(142287)['plan']);
     }
+
+    /**
+     * Triton is unfounded and needs a thermal_core; its mars_ice is mined
+     * only on Mars. The run takes the turn — here, making the batteries it
+     * packs — past the model and its gates, and says so.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheSupplyRunTakesTheTurn(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, ['triton']);
+
+        $home = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false]);
+        $home['inventory'] = ['credits' => 418017, 'heat_shield' => 1, 'copper' => 10, 'metal' => 50, 'salt' => 50, 'silicon' => 50];
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+
+        $line = '';
+        $player->step(142285, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertSame('combine', $this->posts[0][1]['verb']);
+        self::assertSame(['metal' => 1, 'salt' => 1, 'silicon' => 1], $this->posts[0][1]['args']['ingredients'], 'a battery, not the model\'s mining');
+        self::assertSame('supply', $player->lastTurn(142285)['source']);
+        self::assertSame('supply', $state->getLastDecision(142285)['source']);
+        self::assertStringStartsWith('🚚 Agent #142285 supply run → **combine**', $line);
+    }
+
+    /**
+     * A refusal the run cannot shed its way past — no landing gear — stands
+     * it down and gives the turn back, instead of resubmitting forever.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testARefusalTheRunCannotFixStandsItDown(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, ['triton']);
+        $state->recordDecision(142285, ['verb' => 'depart', 'args' => ['dest' => 'mars'], 'reason' => '', 'queued_intent' => 999, 'tick' => 1, 'source' => 'supply']);
+
+        $refused = $this->season8Stall(['colony_exists' => false, 'status' => 'rejected', 'result' => 'Mars needs LANDING GEAR on the ship (build a landing_gear part before finalizing the rocket)']);
+        $refused['inventory'] = ['credits' => 418017, 'battery' => 2, 'copper' => 10, 'heat_shield' => 1, 'warp_container' => 8, 'c_regolith' => 40];
+        $player = new AutoPlayer($this->nhaWith($refused), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertNotSame('supply', $player->lastTurn(142285)['source'] ?? null, 'the turn went back to ordinary play');
+        self::assertTrue($state->supplyRunPaused(142285, 1_829_400));
+        self::assertStringContainsString('LANDING GEAR', (string) $state->supplyRunPauseReason(142285));
+    }
+
+    /**
+     * A refusal for uncrated cargo is the one the run answers itself: shed,
+     * and go again.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testACargoRefusalKeepsTheRunGoing(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, ['triton']);
+        $state->recordDecision(142285, ['verb' => 'depart', 'args' => ['dest' => 'mars'], 'reason' => '', 'queued_intent' => 999, 'tick' => 1, 'source' => 'supply']);
+
+        // In the depart band (the fixture's default), packed, with drip since the last shed.
+        $refused = $this->season8Stall(['colony_exists' => false, 'status' => 'rejected',
+            'result' => 'a warp gate carries body cargo only in stasis crates: 260 units needs 11 warp_container (25 per crate) and you hold 8.']);
+        $refused['inventory'] = ['credits' => 418017, 'battery' => 2, 'copper' => 10, 'heat_shield' => 1, 'warp_container' => 8, 'c_regolith' => 260];
+        $player = new AutoPlayer($this->nhaWith($refused), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame(['side' => 'sell', 'resource' => 'c_regolith', 'qty' => 260, 'price' => 1], $this->posts[0][1]['args']);
+        self::assertFalse($state->supplyRunPaused(142285, 1_829_400));
+    }
 }

@@ -83,6 +83,25 @@ final class GameData
     ];
 
     /**
+     * Exotic body cargo (`engine.py` `EXPANSION_CARGO`, transcribed
+     * 2026-09-25). A warp-gate crossing refuses any of it that is not packed
+     * in {@see WARP_CRATE_CAP}-unit `warp_container`s, and `distress`
+     * jettisons all of it.
+     *
+     * @var list<string>
+     *
+     * @since 3.20.0
+     */
+    public const EXPANSION_CARGO = [
+        'c_regolith', 'stickney_glass', 'void_pumice', 'mars_regolith', 'perchlorate',
+        'mars_ice', 'nanohematite', 'cloud_acid',
+        'cryo_brine', 'clean_ice', 'methane', 'tholin', 'nitrogen_ice', 'neon',
+    ];
+
+    /** Exotic units one `warp_container` carries through a gate (`engine.py` `WARP_CRATE_CAP`). */
+    public const WARP_CRATE_CAP = 25;
+
+    /**
      * Spellings the model uses that the engine does not, each mapped to the
      * engine's own name. Not an engine table: a guard against the model's
      * vocabulary. Live, `aluminium` (copied from our own prompt text) was

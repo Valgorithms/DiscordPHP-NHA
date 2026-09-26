@@ -21,6 +21,7 @@ use NHA\State\IdentityStateTrait;
 use NHA\State\LoopStrategyStateTrait;
 use NHA\State\PlanStateTrait;
 use NHA\State\PositionStateTrait;
+use NHA\State\SupplyRunStateTrait;
 
 /**
  * Tiny JSON-file backed store for data that must survive a bot restart: the
@@ -50,6 +51,7 @@ class StateStore
     use LoopStrategyStateTrait;
     use PlanStateTrait;
     use PositionStateTrait;
+    use SupplyRunStateTrait;
 
     protected array $data;
 

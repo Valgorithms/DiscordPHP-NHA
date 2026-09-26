@@ -6,6 +6,32 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.20.0] - 2026-09-25
+
+### Added
+- **The supply run (`Brain\SupplyRun`).** Triton is unfounded and needs a
+  `thermal_core` in the hold to land; a thermal_core is a battery + `mars_ice`
+  + a non-magnetic metal, and `mars_ice` is mined only on Mars. Nothing could
+  make that trip: the depart gate never picked a finished colony, and on a
+  finished body the only job was the trip home. The run now does it, for gear
+  an unfounded destination needs, every move read off the observation:
+  - pack at home: two batteries, copper, the body's arrival items and, for a
+    gated route, eight `warp_container` crates, each bought or batch-crafted
+    from recipes the world already knows;
+  - ride to the depart band and shed exotic cargo into a 1-credit sell order
+    until the crates can carry the rest (a gate refuses uncrated body cargo,
+    and the agent's extractors add about ten `c_regolith` a tick);
+  - warp to Mars, land, mine six `mars_ice` a turn, and combine the
+    thermal_core there, since it is not exotic cargo and needs no crate;
+  - shed again and depart for Earth from the surface.
+  It is submitted directly, like combat (source `supply`, `🚚` on the status
+  line), so the gates written for the model's picks do not unpick it. A
+  refusal of its own move that shedding cannot fix stands it down for 600
+  ticks (`SupplyRunStateTrait`); a refusal for uncrated cargo is answered by
+  shedding again.
+- `GameData::EXPANSION_CARGO` and `WARP_CRATE_CAP`, transcribed from the
+  engine.
+
 ## [3.19.0] - 2026-09-25
 
 ### Added

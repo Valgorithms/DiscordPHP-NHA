@@ -739,6 +739,58 @@ final class AutoPlayer
     private array $planNews = [];
 
     /**
+     * This turn's supply-run move ({@see SupplyRun}), or null to play the turn
+     * as usual: no run needed, the run stood down, or nothing it can do now.
+     *
+     * A refusal of the run's own last move that shedding cannot fix (no
+     * landing gear, too little Δv, a closed route) stands the run down for
+     * {@see StateStore::supplyRunPaused()}'s window instead of resubmitting
+     * it. A refusal for uncrated cargo is the one the run answers itself: it
+     * sheds and goes again.
+     *
+     * @param array<string,mixed>      $raw
+     * @param list<string>             $colonyDone
+     * @param array<string,mixed>|null $last       Last turn's recorded decision.
+     * @param array<string,mixed>      $pre        This turn's prefetch (for last turn's outcome).
+     *
+     * @return array{verb: string, args: array<string,mixed>, reason: string, need: array{item: string, resource: string, body: string}}|null
+     *
+     * @since 3.20.0
+     */
+    private function supplyTurn(int $agent_id, array $raw, array $colonyDone, int $tick, ?array $last, array $pre): ?array
+    {
+        if ($this->state->supplyRunPaused($agent_id, $tick)) {
+            return null;
+        }
+        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id));
+        if ($need === null) {
+            return null;
+        }
+
+        $cargoRefused = false;
+        $oc = (array) ($pre['outcome'] ?? []);
+        if (($last['source'] ?? '') === 'supply' && ($oc['status'] ?? '') === 'rejected') {
+            $why = (string) ($oc['result'] ?? '');
+            if (str_contains($why, 'warp_container') || str_contains($why, 'stasis crate')) {
+                $cargoRefused = true;
+            } else {
+                $this->state->pauseSupplyRun($agent_id, $tick, $why);
+
+                return null;
+            }
+        }
+
+        $move = SupplyRun::step($raw, $need, $cargoRefused);
+
+        return $move === null ? null : [
+            'verb' => $move['verb'],
+            'args' => $move['args'],
+            'reason' => "supply run — the {$need['item']} for the outer bodies needs {$need['resource']} from {$need['body']}: {$move['why']}",
+            'need' => $need,
+        ];
+    }
+
+    /**
      * Ticks off every plan step the observation already shows done
      * ({@see Planner::stepMet()}), in order, and says so.
      *
@@ -1781,6 +1833,38 @@ final class AutoPlayer
             $stalled = $loopStreak >= 2 || $holdOverrun > 0 || $blockedAgain !== [];
             $where = Ladder::atBody($rawObs) ?? 'home';
             $planKick = fn() => $this->kickPlanner($agent_id, $observation, $context, $tick, $where, $stalled);
+
+            // THE SUPPLY RUN. Logistics the model cannot hold together one verb
+            // at a time and that none of the ladder's rungs covers: fetch a body
+            // resource for arrival gear, make the gear there, come home
+            // ({@see SupplyRun}). Submitted directly, like combat, so the gates
+            // written for the model's picks — research, loop break, the depart
+            // band, the trip home — do not unpick a sequence they were never
+            // written for.
+            if (($supply = $this->supplyTurn($agent_id, $rawObs, $colonyDoneNow, $tick, $last, $pre)) !== null) {
+                $altNow = (int) ($observation->get('altitude') ?? 0);
+                $this->lastTurn[$agent_id] = ['tick' => $tick, 'source' => 'supply', 'verb' => $supply['verb']];
+
+                return $this->nha->intentWithToken($agent_id, $token, $supply['verb'], $supply['args'])
+                    ->then(function ($queued) use ($agent_id, $supply, $tick, $altNow) {
+                        $queuedId = ((array) $queued)['queued_intent'] ?? null;
+                        $this->state->recordDecision($agent_id, [
+                            'verb' => $supply['verb'],
+                            'args' => $supply['args'],
+                            'reason' => $supply['reason'],
+                            'queued_intent' => $queuedId,
+                            'tick' => $tick,
+                            'alt' => $altNow,
+                            'source' => 'supply',
+                        ]);
+                        $args = $supply['args'] === [] ? '' : ' ' . json_encode($supply['args'], JSON_UNESCAPED_SLASHES);
+                        $ref = $queuedId !== null ? " (queued #{$queuedId})" : '';
+                        $news = isset($this->planNews[$agent_id]) ? "\n{$this->planNews[$agent_id]}" : '';
+                        unset($this->planNews[$agent_id]);
+
+                        return "🚚 Agent #{$agent_id} supply run → **{$supply['verb']}**{$args}{$ref}\n> {$supply['reason']}{$news}";
+                    });
+            }
 
             $altNow = (int) ($observation->get('altitude') ?? 0);
 

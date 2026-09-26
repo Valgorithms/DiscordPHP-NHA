@@ -47,8 +47,10 @@ flowchart TD
     ctx --> detect["detectLoop recent<br/>&#40;a 'stuck land/launch' bypasses the cooldown&#41;"]
     detect --> isloop{loop found &amp;<br/>not in cooldown?}
     isloop -- yes --> peek["state.peekNextForcedObjective<br/>&#40;name it for the prompt; do NOT commit yet&#41;"]
-    peek --> decide
-    isloop -- no --> decide[["brain.decide observation, context, stance"]]
+    peek --> sup
+    isloop -- no --> sup{"SupplyRun::need — an UNFOUNDED destination needs gear<br/>made from a body resource? &#40;and the run not stood down&#41;"}
+    sup -- yes --> supA[["&#128666; SupplyRun::step: pack &#8594; elevator &#8594; shed cargo &#8594; depart &#8594; land &#8594; mine &#8594; make &#8594; shed &#8594; home<br/>submitted directly, source supply"]]
+    sup -- no --> decide[["brain.decide observation, context, stance"]]
     decide --> plan["respell the model's args &#40;aluminium &#8594; aluminum&#41;<br/>step_done &#8594; state.advancePlan<br/>planDue &#8594; Planner::plan &#40;not awaited; stored when it lands&#41;"]
     plan --> waited{decision == null<br/>AND no forced objective?}
     waited -- yes --> recW["record a 'wait'<br/>&#40;visible to detectLoop&#41;"] --> done
@@ -129,6 +131,24 @@ ticks to work. Never within 150 ticks of the last ask, answered or not. A plan
 handed back unchanged keeps its current step. The call is made after the turn's
 own model call returns and is not awaited, so it never holds a turn up;
 `NHA_PLANNER=0` turns it off.
+
+**The supply run** ([`SupplyRun`](../src/NHA/Brain/SupplyRun.php)). Triton
+is unfounded and needs a `thermal_core` in the hold to land; a thermal_core is
+a battery + `mars_ice` + a non-magnetic metal, and `mars_ice` is mined only on
+Mars. No rung made that trip: the depart gate skipped finished colonies, and on
+a finished body the only job was the trip home. The run fills that gap for gear
+an UNFOUNDED destination needs (a founded one takes credits from home through
+`invest`). Every move is read off the observation: pack at home (two
+batteries, copper, the body's arrival items, eight `warp_container` crates for
+a gated route, each bought or batch-crafted from known recipes), ride to the
+band, shed exotic cargo into a 1-credit sell order until the crates can carry
+the rest, warp to Mars, land, mine six `mars_ice` a turn, combine the
+thermal_core there (it is not exotic cargo, so it needs no crate), shed again,
+and depart for Earth from the surface. It is submitted directly, like combat,
+so the gates written for the model's picks do not unpick it. A refusal of its
+own move that shedding cannot fix (no landing gear, too little Δv) stands it
+down for 600 ticks (`SupplyRunStateTrait`); a refusal for uncrated cargo is
+answered by shedding again.
 
 Every draft is reviewed by `Planner::critique()` before it is adopted. It
 flags a body resource ([`GameData::BODY_MINE`](../src/NHA/Brain/GameData.php),
