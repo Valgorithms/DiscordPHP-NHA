@@ -18,9 +18,10 @@ class NHARepositoryTest extends NHAUnitTestCase
     /**
      * Replaces the NHA transport with a resolved fixture response.
      *
-     * @param mixed $response
+     * @param mixed       $response
+     * @param string|null $route    When given, the route the request must go to.
      */
-    private function withHttpResponse($response): NHA
+    private function withHttpResponse($response, ?string $route = null): NHA
     {
         $http = $this->getMockBuilder(Http::class)
             ->disableOriginalConstructor()
@@ -28,11 +29,14 @@ class NHARepositoryTest extends NHAUnitTestCase
             ->getMock();
         $http->expects($this->once())
             ->method('get')
-            ->willReturnCallback(function ($endpoint) use ($response) {
+            ->willReturnCallback(function ($endpoint) use ($response, $route) {
                 $this->assertTrue(
                     is_string($endpoint) || $endpoint instanceof Endpoint,
                     'Repository requests must use a route string or a bound endpoint.',
                 );
+                if ($route !== null) {
+                    $this->assertSame($route, (string) $endpoint);
+                }
 
                 return resolve($response);
             });
@@ -64,6 +68,49 @@ class NHARepositoryTest extends NHAUnitTestCase
         });
 
         $this->assertInstanceOf(\NHA\Parts\World::class, $world);
+    }
+
+    /**
+     * `/vault` has no schema, so the board resolves as the server sent it.
+     *
+     * @covers \NHA\Repository\WorldRepository
+     */
+    public function testGetVaultResolvesTheRawBoard()
+    {
+        $board = [
+            'exists' => true,
+            'open' => true,
+            'where' => 'titan',
+            'symbols_in_seal' => 6,
+            'obelisks' => [['position' => 1, 'place' => 'earth', 'x' => 59, 'y' => 47]],
+            'read_by' => ['1' => ['Barbarian']],
+            'opened_by' => 'v2bot-flint',
+            'opened_tick' => 1748900,
+        ];
+        $nha = $this->withHttpResponse($board, 'vault');
+
+        $vault = null;
+        $nha->world->getVault()->then(function ($resolved) use (&$vault) {
+            $vault = $resolved;
+        });
+
+        $this->assertSame($board, $vault);
+    }
+
+    /**
+     * @covers \NHA\Repository\MetaRepository
+     */
+    public function testGetTreasuryResolvesTheRawBoard()
+    {
+        $board = ['credits' => 9450, 'guild_fee' => 50, 'guild_filings_kept' => 640, 'guild_filings_refunded' => 160];
+        $nha = $this->withHttpResponse($board, 'treasury');
+
+        $treasury = null;
+        $nha->meta->getTreasury()->then(function ($resolved) use (&$treasury) {
+            $treasury = $resolved;
+        });
+
+        $this->assertSame($board, $treasury);
     }
 
     /**

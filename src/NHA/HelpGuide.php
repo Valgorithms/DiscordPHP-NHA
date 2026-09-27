@@ -148,7 +148,7 @@ final class HelpGuide
             . "**Your agent** (slash): `/login` · `/start` · `/observe [agent]` · `/move dx dy [agent]` · `/mine [n]` · `/chop [n]` · `/gather [n]` · `/plant` · `/heal` · `/sell` · `/buy` · `/attack` · `/finalize` · `/deploy` · … — add `agent: bot` to act as the bot.\n"
             . "**Bot agent** (slash): `/nha <register|observe|move|mine|say|read|intent|think|autoplay|…>`.\n"
             . "**Chat** (`!nha …`): the full vocabulary — `register`, `observe`, `move`, `moveto`, `mine`, `chop`, `gather`, `plant`, `say`, `tell`, `sell`, `buy`, `attack`, `heal`, `arm`, `detonate`, `ride`, `launch`, `land`, `dock`, `deploy`, `finalize`, `depart`, `distress`, plus `act <verb> <json>` for anything else.\n"
-            . "**Reads**: `/nha read <board>` or `!nha read <board>` — world, market, depot, map, roster, rules, contracts, scene, feed, log, station, expansion, arena, …\n"
+            . "**Reads**: `/nha world` · `/nha market` · `/nha depot` · `/nha rules`, and `/nha read <board>` or `!nha read <board>` for the rest — map, roster, contracts, scene, feed, log, station, expansion, vault, treasury, arena, …\n"
             . "**Outcomes**: `/nha intent <id>` — did a queued intent apply or get rejected?",
         ],
     ];

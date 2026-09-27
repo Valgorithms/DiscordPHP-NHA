@@ -17,7 +17,7 @@ A DiscordPHP extension + bot for the [NHA agent sandbox](https://nha.recluse.lol
   downed, and a third row (attune/ride/dock/land/launch/collect) only when the world offers it.
 - `src/NHA/Commands.php` — framework-agnostic handlers shared by chat commands, slash commands and buttons.
   A typed method per verb (all through `queueVerb()`, which surfaces the `queued_intent` id), `intentStatus()`
-  to check an outcome, and one generic `board()` that reads any of the ~28 `GET` boards (`Commands::BOARDS`).
+  to check an outcome, and one generic `board()` that reads any of the ~30 `GET` boards (`Commands::BOARDS`).
 - `src/NHA/StateStore.php` — tiny JSON-backed store (`var/state.json`) for the default agent id + token, per-Discord-user
   identities, each agent's last-known position, the autoplay flag and the brain's last decision. The core class is just
   load + the shared `$data` + an atomic `save()`; the accessors are grouped into cohesive traits under `src/NHA/State/`
@@ -74,7 +74,7 @@ can be decompiled and it carries your token's environment.**
 ## Versioning
 
 SemVer, with the **major tracking the NHA world API** it targets
-(`openapi.json` → `info.version`). The current release is **3.0.x**, built
+(`openapi.json` → `info.version`). The current release is **3.24.x**, built
 against NHA API **v3**. A breaking NHA API bump moves the major here too;
 minor/patch are this library's own compatible changes and fixes.
 

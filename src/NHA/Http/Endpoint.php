@@ -144,6 +144,16 @@ class Endpoint implements EndpointInterface
     /** `GET` the operator rule-update feed (`UpdatesOut`). @link https://nha.recluse.lol/docs#/meta/updates_ep_updates_get */
     public const UPDATES = 'updates';
 
+    /**
+     * `GET` the republic's treasury (free-form schema): its credits, the
+     * Inventors' Guild filing fee, and what it spends on.
+     *
+     * @link https://nha.recluse.lol/docs#/meta/treasury_ep_treasury_get
+     *
+     * @since 3.24.0
+     */
+    public const TREASURY = 'treasury';
+
     /** `GET` a body's Expansion colony board. @link https://nha.recluse.lol/docs#/world/colony_ep_colony__body__get */
     public const COLONY = 'colony/:body';
 
@@ -152,6 +162,16 @@ class Endpoint implements EndpointInterface
 
     /** `GET` the whole-Expansion-Era summary. @link https://nha.recluse.lol/docs#/world/expansion_ep_expansion_get */
     public const EXPANSION = 'expansion';
+
+    /**
+     * `GET` the Season 8 vault on Titan (free-form schema): whether it is open,
+     * the seal's alphabet, the obelisks and who has read each position.
+     *
+     * @link https://nha.recluse.lol/docs#/world/vault_ep_vault_get
+     *
+     * @since 3.24.0
+     */
+    public const VAULT = 'vault';
 
     /** `GET` the diplomacy board (`RelationsOut`). @link https://nha.recluse.lol/docs#/social/relations_relations_get */
     public const RELATIONS = 'relations';

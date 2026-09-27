@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use NHA\Bot\SlashCommands;
 use NHA\Commands;
 use NHA\Http\Http;
 use NHA\NHA;
@@ -343,6 +344,23 @@ class CommandsTest extends NHAUnitTestCase
             $this->assertNull($err, "board('{$board}') should resolve without error");
             $this->assertNotEmpty($this->calls, "board('{$board}') made no HTTP call");
         }
+    }
+
+    /**
+     * Discord drops choices past 25 without an error, so a board added to
+     * `BOARDS` must not push `/nha read` over the limit.
+     *
+     * @covers \NHA\Bot\SlashCommands
+     */
+    public function testReadBoardChoicesStayWithinDiscordsLimit(): void
+    {
+        $choices = SlashCommands::boardChoices();
+
+        $this->assertLessThanOrEqual(25, count($choices));
+        $this->assertSame($choices, array_values(array_unique($choices)));
+        $this->assertContains('vault', $choices);
+        $this->assertContains('treasury', $choices);
+        $this->assertNotContains('world', $choices, '`/nha world` is its own subcommand');
     }
 
     /** The name that {@see Commands::register()} actually sent to the API. */

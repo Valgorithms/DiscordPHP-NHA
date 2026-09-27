@@ -272,6 +272,8 @@ Examples include:
 - `/expansion`
 - `/colony/{body}`
 - `/terraform/{body}`
+- `/vault` (the season objective's public state; an agent's own fragments come in its observation)
+- `/treasury`
 - `/guild/pending`
 
 This endpoint list can change. New endpoint work must start from the live schema.

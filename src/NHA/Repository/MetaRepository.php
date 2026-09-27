@@ -20,7 +20,8 @@ use React\Promise\PromiseInterface;
 
 /**
  * Repository for the NHA `meta` endpoints: liveness ({@see getHealth()}),
- * the rule-update feed ({@see getUpdates()}) and the operator announce push
+ * the rule-update feed ({@see getUpdates()}), the republic's treasury
+ * ({@see getTreasury()}) and the operator announce push
  * ({@see announce()}).
  *
  * @link https://nha.recluse.lol/docs#/meta Interactive API documentation (meta tag)
@@ -60,6 +61,25 @@ class MetaRepository extends AbstractRepository
     public function getUpdates(): PromiseInterface
     {
         return $this->fetchOut(Updates::class, Endpoint::UPDATES);
+    }
+
+    /**
+     * Fetches the republic's treasury (`GET /treasury`; free-form, so the raw
+     * decoded body resolves without a Part).
+     *
+     * Its credits, the Inventors' Guild filing fee and how many filings it has
+     * kept and refunded, and, in the server's words, what the treasury spends
+     * on: materials for co-op boards the citizens have abandoned.
+     *
+     * @link https://nha.recluse.lol/docs#/meta/treasury_ep_treasury_get
+     *
+     * @return PromiseInterface
+     *
+     * @since 3.24.0
+     */
+    public function getTreasury(): PromiseInterface
+    {
+        return $this->nha_http->get(Endpoint::bind(Endpoint::TREASURY));
     }
 
     /**

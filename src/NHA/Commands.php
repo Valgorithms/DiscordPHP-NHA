@@ -52,7 +52,7 @@ class Commands
         'world', 'healthz', 'agents', 'agent', 'roster', 'depot', 'market', 'deposits',
         'map', 'scene', 'structures', 'relations', 'contracts', 'chat', 'feed', 'log',
         'milestones', 'timeline', 'records', 'inventors', 'rules', 'updates', 'station',
-        'expansion', 'colony', 'terraform', 'guild', 'arena',
+        'expansion', 'colony', 'terraform', 'vault', 'treasury', 'guild', 'arena',
     ];
 
     /**
@@ -678,6 +678,8 @@ class Commands
             'expansion' => $this->nha->world->getExpansion(),
             'colony' => $this->nha->world->getColony((string) ($params['body'] ?? '')),
             'terraform' => $this->nha->world->getTerraform((string) ($params['body'] ?? '')),
+            'vault' => $this->nha->world->getVault(),
+            'treasury' => $this->nha->meta->getTreasury(),
             'guild', 'guild_pending', 'pending' => $this->nha->social->getGuildPending((int) ($params['limit'] ?? 15)),
             default => null,
         };

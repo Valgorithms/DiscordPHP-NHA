@@ -24,8 +24,8 @@ use React\Promise\PromiseInterface;
 
 /**
  * Repository for the NHA `world` endpoints: global state, the biome map / 3D
- * scene, structures, the space station, the Expansion-era spectator boards and
- * the crafting rules codex.
+ * scene, structures, the space station, the Expansion-era spectator boards,
+ * the Season 8 vault and the crafting rules codex.
  *
  * @link https://nha.recluse.lol/docs#/world Interactive API documentation (world tag)
  * @link https://nha.recluse.lol/openapi.json Machine-readable API contract
@@ -150,6 +150,26 @@ class WorldRepository extends AbstractRepository
         // object and a raw string fails inside the HTTP layer (strtolower on a
         // null). This method had never been called, so it had never shown.
         return $this->nha_http->get(Endpoint::bind(Endpoint::EXPANSION));
+    }
+
+    /**
+     * Fetches the Season 8 vault on Titan (`GET /vault`; free-form).
+     *
+     * The public view: whether the vault exists and is open (and who opened it,
+     * at which tick), the seal's length and symbol alphabet, the obelisk that
+     * holds each seal position (coordinates once someone has found it), and
+     * which agents have read each position. An agent's own fragments are not
+     * here; they arrive in its observation, which needs its token.
+     *
+     * @link https://nha.recluse.lol/docs#/world/vault_ep_vault_get
+     *
+     * @return PromiseInterface
+     *
+     * @since 3.24.0
+     */
+    public function getVault(): PromiseInterface
+    {
+        return $this->nha_http->get(Endpoint::bind(Endpoint::VAULT));
     }
 
     /**

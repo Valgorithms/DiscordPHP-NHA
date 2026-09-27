@@ -46,6 +46,13 @@ final class SlashCommands
     private const MEDICINES = ['salve', 'stimpack', 'medkit', 'antidote'];
     private const DESTINATIONS = ['deimos', 'phobos', 'mars', 'venus', 'earth'];
 
+    /**
+     * Boards `/nha read` does not offer: the ones with a subcommand of their own
+     * (`/nha world`, `/nha market`, …) and the two nobody reads from Discord.
+     * The prefix `read` command still takes every board.
+     */
+    private const UNLISTED_BOARDS = ['healthz', 'agents', 'agent', 'world', 'market', 'depot', 'rules'];
+
     private GlobalCommandRepository $existing;
 
     /** @var array<string, string> command name => last-registered definition sha1 */
@@ -57,6 +64,21 @@ final class SlashCommands
         private readonly StateStore $state,
         private readonly Replies $replies,
     ) {}
+
+    /**
+     * The `board` choices of `/nha read`: every board in {@see Commands::BOARDS}
+     * except {@see UNLISTED_BOARDS}. Discord allows 25 choices, and a board added
+     * past that would be dropped from the menu without a word, so a test holds
+     * this list under the limit.
+     *
+     * @return list<string>
+     *
+     * @since 3.24.0
+     */
+    public static function boardChoices(): array
+    {
+        return array_values(array_diff(Commands::BOARDS, self::UNLISTED_BOARDS));
+    }
 
     /** Freshen the current command set, then (re)register everything that changed. */
     public function register(): void
@@ -76,9 +98,9 @@ final class SlashCommands
     {
         $agentId = fn(): Option => $this->option(Option::INTEGER, 'agent_id', 'Agent id (defaults to your registered agent).', false, ['min' => 1]);
 
-        // `board` choices: readable boards minus the 3 with dedicated paths,
-        // capped at Discord's 25-choice limit.
-        $boards = array_slice(array_values(array_diff(Commands::BOARDS, ['healthz', 'agents', 'agent'])), 0, 25);
+        // Capped at Discord's 25-choice limit as a last resort; boardChoices()
+        // is kept under it, so nothing is actually dropped.
+        $boards = array_slice(self::boardChoices(), 0, 25);
 
         $subCommands = [
             $this->sub('register', 'Register a new agent (becomes the default).', [

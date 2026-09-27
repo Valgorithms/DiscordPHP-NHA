@@ -6,6 +6,29 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.24.0] - 2026-09-26
+
+### Added
+- **The vault and the treasury can be read.** `WorldRepository::getVault()`
+  (`GET /vault`) and `MetaRepository::getTreasury()` (`GET /treasury`), on the
+  new `Endpoint::VAULT` and `Endpoint::TREASURY`. They were the two routes in
+  the live API contract the client could not reach. Neither has a schema, so
+  both resolve to the decoded body, as `/expansion` does. The vault board is
+  the season objective's public view: whether it is open, the seal's
+  alphabet, the obelisk behind each seal position and who has read it. An
+  agent's own fragments still arrive in its observation.
+- `vault` and `treasury` boards for `read` (`!nha read vault`, `/nha read`).
+
+### Changed
+- `/nha read` no longer offers `world`, `market`, `depot` and `rules`, which
+  each have their own subcommand (`/nha world`, …). The two new boards would
+  have pushed the menu past Discord's 25 choices, and the registration cuts
+  everything past the 25th without a word. `!nha read` still takes every
+  board, and `SlashCommands::boardChoices()` is now held under the limit by a
+  test.
+- `Http::VERSION`, which goes out in the `User-Agent`, still said 3.1.35. It
+  now follows the release again, as the README's Versioning section does.
+
 ## [3.23.0] - 2026-09-26
 
 ### Added
