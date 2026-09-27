@@ -68,6 +68,22 @@ final class VaultTest extends TestCase
     }
 
     /**
+     * A sealed vault is world work; an open one, or a season without one, is not.
+     */
+    public function testAVaultIsPendingOnlyWhileItIsSealed(): void
+    {
+        $sealed = $this->world();
+        $opened = $sealed;
+        $opened['expansion']['vault']['open'] = true;
+        $none = $sealed;
+        unset($none['expansion']['vault']);
+
+        self::assertTrue(Vault::pending($sealed));
+        self::assertFalse(Vault::pending($opened));
+        self::assertFalse(Vault::pending($none));
+    }
+
+    /**
      * An unauthenticated observe puts a "hidden: send your token" STRING where
      * the fragments go. That is not "I hold none" — it is "I did not ask
      * properly", and conflating the two has the agent re-walk stones it has

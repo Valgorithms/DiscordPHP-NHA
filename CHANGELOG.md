@@ -6,6 +6,36 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.25.0] - 2026-09-26
+
+### Changed
+- **With nothing left to do, the agent holds instead of farming points.**
+  Each turn now works out `_no_objective`: no body with work left that a ship
+  can reach, no board that takes credits, no vault waiting on its seal. While
+  it is set, the loop guard holds (`Ladder::noop`) instead of forcing its
+  rotation, and the ladder's tower rung stays quiet. Live, with Triton parked
+  and every other colony finished, 36 of the agent's last 40 milestones were
+  loop-breaker monuments, and the same rotation spent Guild filings and trips
+  to orbit.
+- **No elevator trips to nowhere.** A flight-ready expansionist on the ground
+  no longer rides or launches to orbit when nowhere reachable has work left.
+  Up there the in-space branch only sent it straight back down: 60 rides in a
+  day against 4 departures.
+
+### Fixed
+- **Defence no longer fires into a refusal.** Combat defence is submitted
+  ahead of the refused-intent gate, so a shot the game had just refused
+  (target out of vertical range, or a structure in the way) went out again on
+  the next turn. Six of nine attacks in half an hour were that refusal. Defence
+  now checks the refusal memory itself and breaks contact instead, and those
+  two refusals count as transient (held back 60 ticks, not 300), since either
+  agent moving clears them.
+
+### Added
+- `Vault::pending()`: a sealed vault counts as world work.
+- `Ladder::defensiveAction()` takes the agents it must not fire on
+  (`$cannotHit`).
+
 ## [3.24.0] - 2026-09-26
 
 ### Added

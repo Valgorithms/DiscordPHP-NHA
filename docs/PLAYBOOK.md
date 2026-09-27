@@ -36,13 +36,13 @@ flowchart TD
     rules[knownCombines&#40;&#41;<br/>re-pull GET /rules &#8804; every 90s] --> prof["AgentRepository::getAgentInfo<br/>&#40;the world's activity feed; best-effort&#41;"]
     prof --> obs[NHA::observe]
     obs --> capfeed["reviewCapabilityFeed:<br/>fold every NEW rejected act from /agent/&#123;id&#125;.recent<br/>through RejectionClassifier &#8594; state.recordCapability<br/>&#40;needs_part / capability / needs_item / needs_enum&#41;;<br/>clear a needs_item block once its item is held;<br/>advance the review high-water tick"]
-    capfeed --> colony["on a body surface &#8594; GET /colony/&#123;body&#125;<br/>&#40;best-effort; empty board otherwise&#41;"]
+    capfeed --> colony["on a body surface &#8594; GET /colony/&#123;body&#125;<br/>&#40;best-effort; empty board otherwise&#41;<br/>hints: _colony_done &#40;done &#8746; out of reach&#41;;<br/>_no_objective &#40;no reachable body with work, no fundable board, no sealed vault&#41;"]
     colony --> downed{downed?}
     downed -- yes --> skipD[["&#129657; skip"]]
     downed -- no --> stance["Stance::pick &#8594; aggressive &#40;defend&#41; / quartermaster &#8594; researcher &#8594; expansionist<br/>&#40;the resupply chain, then the mission; persisted&#41;"]
     stance --> refrec["last turn rejected &#8594; state.recordRefusal &#40;the exact verb + args&#41;"]
     refrec --> combat{Ladder::defensiveAction<br/>&#40;recent attack / robber / hostile closing while hurt&#41;?}
-    combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#8594; submit &amp; record, skip the brain entirely"]]
+    combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#40;a shot the game just refused &#8212; state.recentRefusal &#8212; is not fired again: break contact&#41;<br/>&#8594; submit &amp; record, skip the brain entirely"]]
     combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;<br/>&#8226; plan &#40;the strategist's goal + steps, current step marked&#41;"]
     ctx --> detect["detectLoop recent<br/>&#40;a 'stuck land/launch' bypasses the cooldown&#41;"]
     detect --> isloop{loop found &amp;<br/>not in cooldown?}
@@ -322,20 +322,20 @@ as the `SUGGESTED next action` line.
 ```mermaid
 flowchart TD
     s([suggestion raw, tried, known, allowSpeculation]) --> r0{"&#40;0&#41; in combat? &#40;recent attack /<br/>robber / hostile close while hurt&#41;"}
-    r0 -- yes --> defend[["heal if &lt; 35% HP · else attack back if armed &amp; in range · else break contact"]]
+    r0 -- yes --> defend[["heal if &lt; 35% HP · else attack back if armed &amp; in range &#40;and not a target in cannotHit&#41; · else break contact"]]
     r0 -- no --> r1{"&#40;1&#41; loose_parts &gt; 0?"}
     r1 -- yes --> finalize[["finalize — assemble a vehicle"]]
     r1 -- no --> r1b{"&#40;1b&#41; a finished vehicle<br/>not out working?"}
     r1b -- yes --> deploy[["deploy — passive mining income"]]
     r1b -- no --> r1c{"&#40;1c&#41; out of combat AND<br/>no medicine / weapon / ammo?"}
     r1c -- yes --> arm[["buy stimpack &#8594; buy kinetic_gun &#8594; buy slug &#215;5"]]
-    r1c -- no --> r1d{"&#40;1d&#41; a stance-specific nudge?<br/>aggressive: top ammo / close on prey<br/>quartermaster: work the deposit / sell a lot / buy metal + crystal<br/>researcher: cut a fresh combine from the surplus<br/>capitalist: fulfil a contract / bank a surplus<br/>expansionist: extractor / dock / walk to elevator"}
+    r1c -- no --> r1d{"&#40;1d&#41; a stance-specific nudge?<br/>aggressive: top ammo / close on prey<br/>quartermaster: work the deposit / sell a lot / buy metal + crystal<br/>researcher: cut a fresh combine from the surplus<br/>capitalist: fulfil a contract / bank a surplus<br/>expansionist: extractor / dock / walk to elevator &#40;only with somewhere reachable to fly&#41;"}
     r1d -- yes --> stanced[["the stance move"]]
     r1d -- no --> r2{"&#40;2&#41; allowSpeculation AND &#8805; 2 raws<br/>at 60+ each &#40;a real surplus, not the stockpile&#41;<br/>AND a fresh untried/unknown pair exists"}
     r2 -- yes --> combine[["combine &#123;a,b&#125; — inventor gamble &#40;luxury: surplus only&#41;"]]
     r2 -- no --> r2b{"&#40;2b&#41; off the ground<br/>AND no asteroid to work?"}
     r2b -- yes --> land[["land"]]
-    r2b -- no --> r3{"&#40;3&#41; on ground AND<br/>composite &#8805; 2 AND metal &#8805; 8?"}
+    r2b -- no --> r3{"&#40;3&#41; on ground AND<br/>composite &#8805; 2 AND metal &#8805; 8<br/>AND not _no_objective?"}
     r3 -- yes --> construct[["construct a tall tower — builder points"]]
     r3 -- no --> r3a{"&#40;3a&#41; standing on a deposit of<br/>a raw held &lt; 30 target?"}
     r3a -- yes --> harvest[["chop / gather / mine up to the 30 target<br/><i>&#40;before spending credits&#41;</i>"]]
@@ -362,7 +362,12 @@ priority**, not a luxury: a speculative `combine` fires whenever two raws sit a
 margin above the stockpile (rung 2, and again inside the expansionist gear-up
 before any part-building). A shipless expansionist has its own harvest rung that
 tops raws toward the research bar, and **never builds towers** (the tower rung is
-gated off for it, and `RESEARCH`/`WEALTH` in its prompt say so).
+gated off for it, and `RESEARCH`/`WEALTH` in its prompt say so). Nobody builds
+one while `_no_objective` is set: with no reachable body left to work, no board
+taking credits and no sealed vault, a tower is points and nothing else, and its
+metal and composite are what the next objective will ask for. Nor does a
+flight-ready expansionist ride to orbit then — up there it would only be sent
+straight back down.
 
 ---
 
@@ -436,6 +441,7 @@ Each objective's deterministic action for that turn (`loopBreakDecision`):
 | objective | action |
 |---|---|
 | _any_, aloft at altitude &#8804; 5 | step off the current cell — the agent is wedged on a structure `land` can't pass |
+| _any_, with `_no_objective` | hold (`Ladder::noop`, a `deposit` that changes nothing) — no rotation advances anything then; it only spent materials on monuments, filings and trips to orbit |
 | `explore` | a long step (~28 cells) in a direction that rotates over time |
 | `wealth`  | sell the biggest stack (keep a working 10) |
 | `build`   | `land` if aloft, else `construct` if it holds composite + metal |

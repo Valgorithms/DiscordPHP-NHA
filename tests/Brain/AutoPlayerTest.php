@@ -475,6 +475,34 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Defence goes out ahead of the refused-intent gate, so it checks the
+     * refusal memory itself: a shot the game just refused is not fired again.
+     *
+     * @covers \NHA\Brain\AutoPlayer
+     * @covers \NHA\Brain\Ladder::defensiveAction
+     */
+    public function testStepDoesNotFireAgainIntoARefusedShot(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->recordRefusal(142287, 'attack', ['weapon' => 'kinetic_gun', 'target' => 9], 'target out of vertical range', 495, true);
+        $nha = $this->nhaWith([
+            'tick' => 500, 'downed_until' => 0, 'position' => [40, 40], 'hp' => 80, 'hp_max' => 100,
+            'inventory' => ['kinetic_gun' => 1, 'slug' => 6],
+            'alerts' => [['tick' => 498, 'kind' => 'attacked', 'by' => 9]],
+            'nearby_agents' => [['id' => 9, 'x' => 42, 'y' => 40, 'dist' => 2]],
+        ]);
+        $line = null;
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":5}}'), $state))
+            ->step(142287, 'tok')->then(function ($l) use (&$line) {
+                $line = $l;
+            });
+
+        $this->assertSame('move', $this->posts[0][1]['verb'], 'steps away instead of firing into the same refusal');
+        $this->assertLessThan(40, $this->posts[0][1]['args']['x'], 'away from #9 at x=42');
+        $this->assertStringContainsString('cannot hit #9', (string) $line);
+    }
+
+    /**
      * @covers \NHA\Brain\AutoPlayer
      */
     public function testDetectLoopFlagsADominantAction(): void
@@ -1963,6 +1991,37 @@ class AutoPlayerTest extends NHAUnitTestCase
         $this->assertSame('combine', $this->posts[0][1]['verb']);
         $ingredients = array_keys($this->posts[0][1]['args']['ingredients']);
         $this->assertSame([], array_intersect($ingredients, ['slug', 'stimpack']), 'the weapon ammo and medicine are left alone');
+    }
+
+    /**
+     * With every body finished or out of reach, no board taking credits and no
+     * vault sealed, a loop break holds: the forced rotation only ever spent
+     * materials on a monument, a Guild filing or a trip to orbit.
+     *
+     * @covers \NHA\Brain\AutoPlayer::loopBreakDecision
+     */
+    public function testLoopBreakHoldsWhenThereIsNoObjective(): void
+    {
+        $state = new StateStore($this->statePath);
+        $state->bumpForcedObjective(142287, 1); // explore
+        $state->bumpForcedObjective(142287, 1); // wealth → next is build, which raised a monument
+        $state->setColonyDone(142287, ['mars', 'triton']);
+        for ($i = 1; $i <= 8; $i++) {
+            $state->recordDecision(142287, ['verb' => 'mine', 'args' => ['n' => 15], 'reason' => '', 'queued_intent' => null, 'tick' => $i]);
+        }
+        $nha = $this->nhaWith([
+            'tick' => 200, 'downed_until' => 0, 'position' => [1, 1], 'in_space' => false, 'altitude' => 0,
+            'inventory' => ['metal' => 40, 'composite' => 6, 'iron' => 40],
+            'expansion' => ['windows' => ['mars' => ['open' => false], 'triton' => ['open' => false]]],
+        ]);
+        $line = null;
+        (new AutoPlayer($nha, $this->brainReturning('{"verb":"mine","args":{"n":15}}'), $state))
+            ->step(142287, 'tok')->then(function ($l) use (&$line) {
+                $line = $l;
+            });
+
+        $this->assertSame('deposit', $this->posts[0][1]['verb'], 'holds (deposit is the no-op) instead of constructing');
+        $this->assertStringContainsString('nothing reachable has work left', (string) $line);
     }
 
     public function testDockedToAsteroidReadsTheDockResultBecauseObserveHasNoFlag(): void

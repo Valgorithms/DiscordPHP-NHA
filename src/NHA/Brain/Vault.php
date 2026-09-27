@@ -108,6 +108,20 @@ final class Vault
         return (bool) (self::block($raw)['open'] ?? false);
     }
 
+    /**
+     * Whether a vault is out there waiting on its seal: the observation carries
+     * one, it exists, and it is not open yet. That is world work even with
+     * every colony finished.
+     *
+     * @since 3.25.0
+     */
+    public static function pending(array $raw): bool
+    {
+        $block = self::block($raw);
+
+        return $block !== [] && (bool) ($block['exists'] ?? true) && ! self::open($raw);
+    }
+
     /** Ticks left on a failed-unlock freeze. */
     public static function cooldown(array $raw): int
     {

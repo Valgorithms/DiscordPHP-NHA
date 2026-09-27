@@ -7,6 +7,19 @@ use NHA\Brain\RejectionClassifier;
 class RejectionClassifierTest extends NHAUnitTestCase
 {
     /**
+     * A shot refused for where the two agents stand clears as soon as either
+     * moves, so it is held back briefly, never long, and never ledgered.
+     *
+     * @covers \NHA\Brain\RejectionClassifier
+     */
+    public function testAShotRefusedForPositionIsTransient(): void
+    {
+        $this->assertTrue(RejectionClassifier::isTransient('target out of vertical range'));
+        $this->assertTrue(RejectionClassifier::isTransient('no line of sight (a structure blocks the shot)'));
+        $this->assertNull(RejectionClassifier::classify('attack', ['weapon' => 'kinetic_gun', 'target' => 3108], 'target out of vertical range'));
+    }
+
+    /**
      * @covers \NHA\Brain\RejectionClassifier
      */
     public function testATimingRaceIsTransientAndNeverGatesARetry(): void

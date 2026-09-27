@@ -39,6 +39,9 @@ final class RejectionClassifier
         'window is closed', 'opens again', 'already in transit', 'already at',
         'not enough', 'insufficient', 'short this turn', 'need more', 'too low',
         'loop detected', 'no loose parts', 'downed', 'on cooldown',
+        // A shot refused for where the two agents stand: either one moving
+        // changes it, so hold off briefly, not for the full refusal window.
+        'out of vertical range', 'no line of sight',
     ];
 
     /**

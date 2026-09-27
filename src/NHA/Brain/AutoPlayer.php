@@ -1089,6 +1089,16 @@ final class AutoPlayer
             ];
         }
 
+        // With no objective there is no "different kind" of action that
+        // advances anything: the rotation below only ever spent materials on a
+        // monument, a Guild filing or a trip to orbit. Hold and keep what the
+        // next objective will need.
+        if (! empty($raw['_no_objective'])) {
+            $hold = Ladder::noop($raw, 'nothing reachable has work left — hold and keep your materials for the next objective');
+
+            return ['verb' => $hold['verb'], 'args' => $hold['args'], 'reason' => "{$lead}: {$hold['why']}"];
+        }
+
         if ($objective === 'expand') {
             // Reuse the expansionist ladder — it encodes the whole flight chain
             // (land + build on a body, depart from Earth orbit, head to the
@@ -1523,6 +1533,18 @@ final class AutoPlayer
             if ($doneForLadder !== []) {
                 $rawObs['_colony_done'] = $doneForLadder;
             }
+            // Nothing left to work toward: no body with work left that a ship
+            // can reach, no board that takes credits, no vault waiting on its
+            // seal. Live, with Triton parked and everything else finished, the
+            // agent filled that time with loop-breaker monuments (36 of its last
+            // 40 milestones) and elevator trips to orbit and straight back
+            // down. The ladder and the loop guard hold while this is set.
+            if (Ladder::liveDestinations($doneForLadder, $rawObs) === []
+                && $this->state->boardWants($agent_id) === []
+                && ! Vault::pending($rawObs)
+            ) {
+                $rawObs['_no_objective'] = true;
+            }
             // What the Guild referee has already told this agent, in its own
             // recorded words. Every filing costs 50 credits and four in five
             // world-wide are refused, so the verdicts are the most expensive
@@ -1639,7 +1661,18 @@ final class AutoPlayer
 
             // Combat overrides everything — defend before consulting the brain
             // or the loop guard. Heal, shoot back, or break contact.
-            if (($defence = Ladder::defensiveAction($rawObs)) !== null) {
+            $defence = Ladder::defensiveAction($rawObs);
+            // Defence goes out before the refused-intent gate further down, so
+            // it has to ask that gate's question itself: the game refused
+            // exactly this shot a moment ago (out of vertical range, a
+            // structure in the way). Live, six of nine attacks in half an hour
+            // were that refusal again. Pick again with that target ruled out.
+            if (($defence['verb'] ?? '') === 'attack'
+                && $this->state->recentRefusal($agent_id, 'attack', (array) $defence['args'], $tick) !== null
+            ) {
+                $defence = Ladder::defensiveAction($rawObs, [(int) ($defence['args']['target'] ?? 0)]);
+            }
+            if ($defence !== null) {
                 $altNow = (int) ($observation->get('altitude') ?? 0);
 
                 $this->lastTurn[$agent_id] = ['tick' => $tick, 'source' => 'defence', 'verb' => (string) $defence['verb']];

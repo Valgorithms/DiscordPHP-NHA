@@ -400,7 +400,10 @@ final class Ladder
         // Accord, not a field of vanity spires. (A grounded expansionist that
         // cannot yet build a working ship keeps *experimenting* with parts;
         // grinding builder points is not a substitute for the goal.)
-        if ($onGround && ! $gearingShip && ! $towerFuelShort && $has('composite') >= 2 && $has('metal') >= 8) {
+        // Not with no objective either ({@see AutoPlayer} sets `_no_objective`):
+        // then a tower is points and nothing else, and the metal and composite
+        // are what the next objective's ship or colony will ask for.
+        if ($onGround && ! $gearingShip && ! $towerFuelShort && empty($raw['_no_objective']) && $has('composite') >= 2 && $has('metal') >= 8) {
             if (self::cellOccupied($raw)) {
                 return self::stepToClearGround($raw);
             }
@@ -625,11 +628,13 @@ final class Ladder
      * Public so {@see AutoPlayer} can apply it as a hard override — combat
      * defence never waits on the LLM.
      *
-     * @param array<string,mixed> $raw The normalised observation.
+     * @param array<string,mixed> $raw       The normalised observation.
+     * @param list<int>           $cannotHit Agents the game just refused a shot at (out of vertical
+     *                                       range, no line of sight): break contact instead of firing.
      *
      * @return array{verb: string, args: array<string,mixed>, reason: string}|null
      */
-    public static function defensiveAction(array $raw): ?array
+    public static function defensiveAction(array $raw, array $cannotHit = []): ?array
     {
         $inv = (array) ($raw['inventory'] ?? []);
         $pos = (array) ($raw['position'] ?? [0, 0]);
@@ -641,6 +646,7 @@ final class Ladder
             (int) ($pos[0] ?? 0),
             (int) ($pos[1] ?? 0),
             (int) ($raw['tick'] ?? 0),
+            $cannotHit,
         );
 
         return $move === null ? null : ['verb' => $move['verb'], 'args' => $move['args'], 'reason' => $move['why']];
@@ -2201,7 +2207,7 @@ final class Ladder
      *
      * @return array{verb: string, args: array<string,mixed>, why: string}|null
      */
-    private static function combatMove(array $raw, array $inv, float $hp, float $hpMax, int $x, int $y, int $tick): ?array
+    private static function combatMove(array $raw, array $inv, float $hp, float $hpMax, int $x, int $y, int $tick, array $cannotHit = []): ?array
     {
         $alerts = (array) ($raw['alerts'] ?? $raw['threats'] ?? []);
         $recentlyHit = false;
@@ -2252,7 +2258,11 @@ final class Ladder
             }
         }
         $target = $hostile ?? $nearest;
-        if ($weapon !== null && $target !== null && (int) ($target['dist'] ?? 99) <= 8 && ! $badlyHurt) {
+        // The game refused the last shot at this one: it is above or below us,
+        // or a structure is in the way. Live, the agent fired six more times
+        // into the same refusal; stepping away changes the geometry instead.
+        $unhittable = $target !== null && in_array((int) ($target['id'] ?? 0), $cannotHit, true);
+        if ($weapon !== null && $target !== null && (int) ($target['dist'] ?? 99) <= 8 && ! $badlyHurt && ! $unhittable) {
             return ['verb' => 'attack', 'args' => ['weapon' => $weapon, 'target' => (int) ($target['id'] ?? 0)], 'why' => "fighting back with {$weapon} against #" . (int) ($target['id'] ?? 0)];
         }
 
@@ -2268,7 +2278,9 @@ final class Ladder
                     'x' => max(0, min(219, $x + (int) round($dx / $mag * 8))),
                     'y' => max(0, min(219, $y + (int) round($dy / $mag * 8))),
                 ],
-                'why' => 'outgunned — break contact and put distance between you and the attacker',
+                'why' => $unhittable
+                    ? 'cannot hit #' . (int) ($target['id'] ?? 0) . ' from here (the game refused the shot) — break contact instead'
+                    : 'outgunned — break contact and put distance between you and the attacker',
             ];
         }
 
@@ -2752,7 +2764,10 @@ final class Ladder
             // On the ground and flight-ready → get to the elevator that
             // actually reaches orbit (300–600). Riding a 120 m spire only
             // decays straight back; if there is no tall elevator, launch.
-            if ($onGround && $flightReady) {
+            // Not when nowhere reachable has work left: up there the in-space
+            // branch above only sends the agent straight back down. Live, that
+            // was 60 elevator rides in a day against 4 departures.
+            if ($onGround && $flightReady && ! $nowhereToFly) {
                 $orbitLift = self::orbitElevator($raw);
                 if ($orbitLift !== null) {
                     $here = $orbitLift['x'] === $x && $orbitLift['y'] === $y;

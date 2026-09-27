@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use NHA\Brain\Bodies;
 use NHA\Brain\GameData;
 use NHA\Brain\Ladder;
 
@@ -202,6 +203,26 @@ class LadderTest extends NHAUnitTestCase
         $this->assertSame('attack', $d['verb']);
         $this->assertSame('kinetic_gun', $d['args']['weapon']);
         $this->assertSame(7, $d['args']['target']);
+    }
+
+    /**
+     * A target the game just refused a shot at (above or below us, or behind a
+     * structure) is not fired on again: the agent steps away instead.
+     *
+     * @covers \NHA\Brain\Ladder::defensiveAction
+     */
+    public function testDefensiveActionBreaksContactWithATargetItCannotHit(): void
+    {
+        $d = Ladder::defensiveAction([
+            'tick' => 100, 'position' => [10, 10], 'hp' => 80, 'hp_max' => 100,
+            'inventory' => ['kinetic_gun' => 1, 'slug' => 6],
+            'last_robbed_by' => 7,
+            'nearby_agents' => [['id' => 7, 'x' => 13, 'y' => 10, 'dist' => 3]],
+        ], [7]);
+
+        $this->assertSame('move', $d['verb']);
+        $this->assertLessThan(10, $d['args']['x'], 'stepped away from the attacker at x=13');
+        $this->assertStringContainsString('cannot hit #7', $d['reason']);
     }
 
     /**
@@ -892,6 +913,46 @@ class LadderTest extends NHAUnitTestCase
 
         // Homestead in the same spot still towers (it is not the mission stance).
         $this->assertSame('construct', Ladder::suggestion($raw, [], [], false, 'homestead')['verb']);
+    }
+
+    /**
+     * With no objective anywhere a tower is points and nothing else, and its
+     * metal and composite are what the next objective will ask for.
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testNoTowersWhenThereIsNoObjective(): void
+    {
+        $raw = [
+            'tick' => 5, 'in_space' => false, 'altitude' => 0, 'position' => [10, 10],
+            'inventory' => self::KIT + ['composite' => 6, 'metal' => 20, 'credits' => 50],
+            'nearby_deposits' => [], 'elevators' => [],
+        ];
+        $this->assertSame('construct', Ladder::suggestion($raw, [], [], false, 'homestead')['verb']);
+
+        $raw['_no_objective'] = true;
+        $this->assertNotSame('construct', Ladder::suggestion($raw, [], [], false, 'homestead')['verb'] ?? null);
+    }
+
+    /**
+     * A flight-ready ship stays on the ground when nowhere reachable has work
+     * left: in orbit the agent would only be sent straight back down.
+     *
+     * @covers \NHA\Brain\Ladder::suggestion
+     */
+    public function testExpansionistDoesNotRideToOrbitWithNowhereToFly(): void
+    {
+        $ready = [
+            'tick' => 5, 'in_space' => false, 'altitude' => 0, 'position' => [10, 10],
+            'inventory' => self::KIT + ['credits' => 4000, 'cryo_fuel' => 95],
+            'elevators' => [['x' => 10, 'y' => 10, 'height' => 500]], 'nearby_deposits' => [],
+            'vehicles' => [['name' => 'runner', 'flies' => true, 'orbital_engine' => true]],
+        ];
+        $this->assertSame('ride', Ladder::suggestion($ready, [], [], false, 'expansionist')['verb'], 'with somewhere to go it rides up');
+
+        $ready['_colony_done'] = Bodies::names($ready);
+        $pick = Ladder::suggestion($ready, [], [], false, 'expansionist');
+        $this->assertNotContains($pick['verb'] ?? null, ['ride', 'launch']);
     }
 
     /**
