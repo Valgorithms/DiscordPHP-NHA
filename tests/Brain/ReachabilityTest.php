@@ -274,7 +274,7 @@ final class ReachabilityTest extends TestCase
         ]);
 
         self::assertMatchesRegularExpression('/triton: .*thermal_core \(MISSING\).*has colony work/u', $prompt, 'the one body with work, and exactly what blocks it');
-        self::assertMatchesRegularExpression('/deimos: .*DONE — nothing to fund/u', $prompt, 'so it stops proposing finished colonies');
+        self::assertMatchesRegularExpression('/deimos: DONE — your share there is finished; nothing to fund/u', $prompt, 'so it stops proposing finished colonies');
         self::assertStringContainsString('warp gate joins it', $prompt);
         self::assertStringContainsString('REFUSED your body cargo', $prompt);
         self::assertStringContainsString('thermal_core = a battery + mars_ice', $prompt, 'the recipe, in the codex\'s own words');

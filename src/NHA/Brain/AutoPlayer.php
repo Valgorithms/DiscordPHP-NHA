@@ -881,12 +881,24 @@ final class AutoPlayer
      * @param array<string,mixed> $context The turn context, shown to the planner as the situation.
      * @param string              $where   A body name, or `home` ({@see planDue()} replans on a change).
      */
-    private function kickPlanner(int $agent_id, AgentObservation $observation, array $context, int $tick, string $where, bool $stalled): void
+    private function kickPlanner(int $agent_id, AgentObservation $observation, array $context, int $tick, string $where, bool $stalled, bool $noObjective = false, string $mark = ''): void
     {
-        if ($this->planner === null || ! $this->state->planDue($agent_id, $tick, $stalled, $where)) {
+        if ($this->planner === null) {
+            return;
+        }
+        // With nothing left to do, the planner is asked only when the world
+        // moved since the agent began holding ({@see holdPlanning()}), and
+        // then once.
+        if ($noObjective && $this->state->planWatch($agent_id) === $mark) {
+            return;
+        }
+        if (! $this->state->planDue($agent_id, $tick, $stalled, $where)) {
             return;
         }
         $this->state->recordPlanAttempt($agent_id, $tick);
+        if ($noObjective) {
+            $this->state->setPlanWatch($agent_id, $mark);
+        }
         $context['objectives'] = $this->state->objectives($agent_id);
         // The whole codex, for the planner's review of its own draft.
         $context['recipe_book'] = $this->recipeNeeds;
@@ -908,6 +920,88 @@ final class AutoPlayer
             // A failed call waits out the retry gap; turns carry on meanwhile.
             static function (): void {},
         );
+    }
+
+    /**
+     * NOTHING TO PLAN FOR (3.26.0). While nothing the agent can reach has work
+     * left (`_no_objective`), the planner is not asked on its usual cadence:
+     * the plan becomes a hold ({@see StateStore::holdPlan()}), made without a
+     * model call, and stands until the world moves.
+     *
+     * Live, the planner was asked every 40 minutes for 37 hours with nothing
+     * to plan for, and each time found the same goal it could not reach
+     * ("acid_skin for the Venus expedition"; Venus was finished).
+     *
+     * - An objective comes back (a body back in reach, a board taking
+     *   credits, a vault waiting on its seal): the hold is dropped, and the
+     *   planner is asked this turn.
+     * - The world moves while there is still nothing to do (the objective
+     *   board changes, or an operator update arrives; {@see worldMark()}):
+     *   the hold is dropped and the planner is asked once. Its plan stands
+     *   until it is finished, then the agent holds again.
+     *
+     * @return string|null News for the status line.
+     */
+    private function holdPlanning(int $agent_id, bool $noObjective, int $tick, string $where, string $mark): ?string
+    {
+        $seen = $this->state->planWatch($agent_id);
+        $plan = $this->state->plan($agent_id);
+        $holding = (bool) ($plan['hold'] ?? false);
+
+        if (! $noObjective) {
+            if ($seen === null) {
+                return null;
+            }
+            $this->state->setPlanWatch($agent_id, null);
+            if (! $holding) {
+                return null;
+            }
+            $this->state->clearPlan($agent_id);
+
+            return '🗺️ there is work within reach again — asking the planner';
+        }
+        if ($seen === null) {
+            $this->state->holdPlan($agent_id, $tick, $where, $mark);
+
+            return '🗺️ holding: nothing reachable has work left — no new plan until the objective board or an operator update changes';
+        }
+        if ($seen !== $mark) {
+            if (! $holding) {
+                return null;
+            }
+            $this->state->clearPlan($agent_id);
+
+            return '🗺️ the objective board or the operator updates changed — asking the planner once';
+        }
+        if ($plan === null || $this->state->planFinished($agent_id)) {
+            $this->state->holdPlan($agent_id, $tick, $where, $mark);
+        }
+
+        return null;
+    }
+
+    /**
+     * What the planner's hold watches: the objective board and the operator
+     * updates. Digits are dropped and the board's lines sorted, so other
+     * agents' progress on a module (its percentage, funders, place in the
+     * list) does not count as the world moving; a module, body, founding,
+     * era or update does.
+     *
+     * @param string              $board The objective board digest ({@see Objectives::digest()}).
+     * @param array<string,mixed> $raw   The observation; its `updates` carry each update's tick.
+     *
+     * @since 3.26.0
+     */
+    public static function worldMark(string $board, array $raw): string
+    {
+        $lines = explode("\n", (string) preg_replace('/\d+/', '#', $board));
+        sort($lines);
+        $newest = 0;
+        foreach ((array) ($raw['updates'] ?? []) as $u) {
+            $newest = max($newest, (int) (((array) $u)['tick'] ?? 0));
+        }
+
+        return substr(sha1(implode("\n", $lines)), 0, 12) . '@' . $newest;
     }
 
     /**
@@ -1911,6 +2005,13 @@ final class AutoPlayer
             // body, or it has stopped working: loop breaks piling up, a hold
             // that overran, or one proposal blocked again and again since the
             // plan was set.
+            $where = Ladder::atBody($rawObs) ?? 'home';
+            $noObjective = ! empty($rawObs['_no_objective']);
+            $mark = self::worldMark($this->state->objectives($agent_id), $rawObs);
+            if (($held = $this->holdPlanning($agent_id, $noObjective, $tick, $where, $mark)) !== null) {
+                // After, not instead of, news already due (a body back in reach).
+                $this->planNews[$agent_id] = isset($this->planNews[$agent_id]) ? "{$this->planNews[$agent_id]}\n{$held}" : $held;
+            }
             if (($news = $this->tickOffPlanSteps($agent_id, $rawObs, $tick)) !== null) {
                 $this->planNews[$agent_id] = $news;
             }
@@ -1923,8 +2024,7 @@ final class AutoPlayer
                 static fn(array $v): bool => $v['count'] >= 3 && $tick - $v['ago'] > (int) ($plan['set_at'] ?? -1),
             );
             $stalled = $loopStreak >= 2 || $holdOverrun > 0 || $blockedAgain !== [];
-            $where = Ladder::atBody($rawObs) ?? 'home';
-            $planKick = fn() => $this->kickPlanner($agent_id, $observation, $context, $tick, $where, $stalled);
+            $planKick = fn() => $this->kickPlanner($agent_id, $observation, $context, $tick, $where, $stalled, $noObjective, $mark);
 
             // THE SUPPLY RUN. Logistics the model cannot hold together one verb
             // at a time and that none of the ladder's rungs covers: fetch a body

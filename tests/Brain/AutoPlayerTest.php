@@ -2862,7 +2862,8 @@ class AutoPlayerTest extends NHAUnitTestCase
         $prompt = (string) ($messages[1]['content'] ?? '');
         self::assertStringContainsString('Destinations', $prompt);
         self::assertMatchesRegularExpression('/triton: .*thermal_core \(MISSING\).*has colony work/u', $prompt);
-        self::assertMatchesRegularExpression('/deimos: .*DONE — nothing to fund/u', $prompt);
+        self::assertMatchesRegularExpression('/deimos: DONE — your share there is finished; nothing to fund/u', $prompt);
+        self::assertDoesNotMatchRegularExpression('/deimos: .*arrival gear/u', $prompt, 'a finished body lists no gear to go and get');
         self::assertStringContainsString('REFUSED your body cargo', $prompt);
 
         $system = (string) ($messages[0]['content'] ?? '');
@@ -3528,6 +3529,8 @@ class AutoPlayerTest extends NHAUnitTestCase
         self::assertNotContains('triton', $state->departUnreachable(142285));
         self::assertSame([], $state->capabilityTargets(142285, 'depart'));
         self::assertStringContainsString('🔭 back in reach: triton (Δv 280, was 320)', $line);
+        self::assertStringContainsString('🗺️ there is work within reach again — asking the planner', $line, 'and the hold it was under is lifted');
+        self::assertNull($state->plan(142285), 'so the next planner call is due now');
     }
 
     /**
@@ -3565,5 +3568,107 @@ class AutoPlayerTest extends NHAUnitTestCase
 
         $post = $this->posts[0][1] ?? [];
         self::assertArrayNotHasKey('thermal_core', (array) (($post['args'] ?? [])['ingredients'] ?? []), 'not combined away');
+    }
+
+    /**
+     * Live, 37 hours: with every reachable colony finished, the planner was
+     * asked every 40 minutes and kept returning "acid_skin for the Venus
+     * expedition" (Venus finished long before), which the turn model then
+     * proposed 755 times. With nothing to plan for, the plan is a hold, made
+     * without asking, and it stands.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     * @covers \NHA\Brain\PromptBuilder::build
+     */
+    public function testWithNothingLeftToDoThePlanIsAHoldAndThePlannerIsNotAsked(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'thermal_core' => 1]);
+        // The mock answers every GET with this payload, so its Triton board
+        // would come back as Deimos's too, and reopen Deimos.
+        unset($home['modules']);
+        $state->setPlan(142285, 'Acquire acid and rubber to craft the acid_skin required for the Venus expedition.', ['hold 1 acid', 'hold 1 rubber', 'hold 1 acid_skin'], 'w', 1_000_000, 'home');
+        $calls = [];
+        $prompts = [];
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainRecording('{"verb":"mine","args":{"n":2}}', $prompts), $state, $this->plannerReplying('{"goal":"g","steps":["hold 1 acid"],"why":"w"}', $calls));
+
+        $line = '';
+        $player->step(142285, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+        self::assertSame([], $calls, 'a stale plan is not refreshed by asking');
+        self::assertSame(StateStore::HOLD_GOAL, $state->plan(142285)['goal']);
+        self::assertStringContainsString('🗺️ holding: nothing reachable has work left', $line);
+
+        for ($i = 0; $i < 3; $i++) {
+            $player->step(142285, 'tok');
+        }
+        self::assertSame([], $calls, 'nor on any later turn while the world stands still');
+        self::assertStringContainsString('YOUR PLAN: ' . StateStore::HOLD_GOAL . '.', end($prompts));
+        self::assertStringNotContainsString('acid_skin required', end($prompts));
+
+        // An hour on, long past the usual 40-minute refresh: still no call.
+        $later = $home;
+        $later['tick'] += 2_000;
+        (new AutoPlayer($this->nhaWith($later), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state, $this->plannerReplying('{"goal":"g","steps":["hold 1 acid"],"why":"w"}', $calls)))->step(142285, 'tok');
+        self::assertSame([], $calls, 'a hold does not go stale');
+    }
+
+    /**
+     * The world moving while there is still nothing to do (a new line on the
+     * objective board, an operator update) earns the planner one call, and
+     * the plan it gives stands.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheWorldMovingAsksThePlannerOnce(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'thermal_core' => 1]);
+        unset($home['modules']); // as above
+        $state->recordObjectives(142285, 1, "WORLD OBJECTIVE BOARD:\n- triton/geyser_mast (NOT FOUNDED) 0% done; 0 funders");
+        $calls = [];
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state, $this->plannerReplying('{"goal":"sell the surplus crystal","steps":["hold 1 chip"],"why":"w"}', $calls));
+        $player->step(142285, 'tok');
+        self::assertSame([], $calls);
+
+        // Someone else's progress is not the world moving.
+        $state->recordObjectives(142285, 2, "WORLD OBJECTIVE BOARD:\n- triton/geyser_mast (NOT FOUNDED) 5% done; 1 funders");
+        $player->step(142285, 'tok');
+        self::assertSame([], $calls, 'only the numbers changed');
+
+        $state->recordObjectives(142285, 3, "WORLD OBJECTIVE BOARD:\n- triton/geyser_mast (NOT FOUNDED) 5% done; 1 funders\n- pluto/beacon (NOT FOUNDED) 0% done; 0 funders");
+        $line = '';
+        $player->step(142285, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+        self::assertCount(1, $calls, 'a new body on the board');
+        // The mock answers inside the turn, so its news replaces the "asking" line.
+        self::assertStringContainsString('🗺️ new plan: sell the surplus crystal', $line);
+        self::assertSame('sell the surplus crystal', $state->plan(142285)['goal']);
+
+        $player->step(142285, 'tok');
+        $player->step(142285, 'tok');
+        self::assertCount(1, $calls, 'once');
+        self::assertSame('sell the surplus crystal', $state->plan(142285)['goal'], 'and its plan stands');
+
+        // An hour on, past the usual refresh: that plan is not re-asked either.
+        $later = $home;
+        $later['tick'] += 2_000;
+        (new AutoPlayer($this->nhaWith($later), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state, $this->plannerReplying('{"goal":"x","steps":["hold 1 chip"],"why":"w"}', $calls)))->step(142285, 'tok');
+        self::assertCount(1, $calls, 'the ask was recorded against the world it saw');
+    }
+
+    /**
+     * @covers \NHA\Brain\AutoPlayer::worldMark
+     */
+    public function testTheWorldMarkIgnoresProgressButNotUpdates(): void
+    {
+        $board = "BOARD:\n- a/x 10% done; 2 funders\n- b/y 50% done; 4 funders";
+        $mark = AutoPlayer::worldMark($board, ['updates' => [['tick' => 5], ['tick' => 9]]]);
+
+        self::assertSame($mark, AutoPlayer::worldMark("BOARD:\n- b/y 70% done; 5 funders\n- a/x 12% done; 2 funders", ['updates' => [['tick' => 9], ['tick' => 5]]]), 'progress and order');
+        self::assertNotSame($mark, AutoPlayer::worldMark($board, ['updates' => [['tick' => 5], ['tick' => 9], ['tick' => 12]]]), 'an operator update');
+        self::assertNotSame($mark, AutoPlayer::worldMark($board . "\n- c/z 0% done", ['updates' => [['tick' => 9]]]), 'a new module');
     }
 }

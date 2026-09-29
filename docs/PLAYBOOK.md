@@ -132,6 +132,21 @@ handed back unchanged keeps its current step. The call is made after the turn's
 own model call returns and is not awaited, so it never holds a turn up;
 `NHA_PLANNER=0` turns it off.
 
+With nothing left to do (`_no_objective`: no reachable body with work left, no
+board taking credits, no vault waiting on its seal), the planner is not asked on
+that cadence. `AutoPlayer::holdPlanning()` makes the plan a hold
+(`StateStore::holdPlan()`) without a model call, and nothing ticks it off. It
+records the world's mark (`AutoPlayer::worldMark()`: the objective board with
+its numbers dropped and its lines sorted, plus the newest operator update's
+tick), so other agents' progress does not count as a change. When an objective
+comes back, the hold is dropped and the planner asked that turn. When the mark
+changes but there is still nothing to do, the planner is asked once, and its
+plan stands until finished. Live, the planner was asked every 40 minutes for 37
+hours with nothing to plan for, and kept returning "acid_skin for the Venus
+expedition" with Venus long finished. A finished body's Destinations line now
+shows its route but no gear: "arrival gear: acid_skin (MISSING)" had read as a
+task.
+
 **The supply run** ([`SupplyRun`](../src/NHA/Brain/SupplyRun.php)). Triton
 is unfounded and needs a `thermal_core` in the hold to land; a thermal_core is
 a battery + `mars_ice` + a non-magnetic metal, and `mars_ice` is mined only on

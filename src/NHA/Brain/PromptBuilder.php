@@ -475,6 +475,10 @@ final class PromptBuilder
         if ($goal === '' || $steps === []) {
             return [];
         }
+        // A hold (3.26.0) is no plan to work toward: its reason is the guidance.
+        if (! empty($plan['hold'])) {
+            return ["YOUR PLAN: {$goal}.", '  ' . (string) ($plan['why'] ?? '')];
+        }
         $at = (int) ($plan['step'] ?? 0);
         $age = $tick > 0 && isset($plan['set_at']) ? max(0, $tick - (int) $plan['set_at']) : null;
 
@@ -526,13 +530,21 @@ final class PromptBuilder
         $inv = (array) ($raw['inventory'] ?? []);
         $out = ['Destinations (depart from Earth orbit, altitude 300-600 — requirements are the engine\'s own):'];
         foreach ($bodies as $body => $b) {
-            $gear = [];
-            foreach ($b['needs_in_hold'] as $item) {
-                $gear[] = ((int) ($inv[$item] ?? 0)) > 0 ? "{$item} (have)" : "{$item} (MISSING)";
-            }
             $route = $b['open'] ? 'window OPEN' : "window opens in {$b['opens_in']} ticks";
             if (Bodies::gateLinked($raw, (string) $body)) {
                 $route .= '; a warp gate joins it (ignores the window, but carries body cargo only in warp_container crates)';
+            }
+            // A finished body shows its route but no gear (3.26.0). Live, Venus
+            // read "arrival gear: acid_skin (MISSING); your share there is
+            // DONE", and the planner spent 37 hours on "craft the acid_skin
+            // for the Venus expedition": MISSING read as a task, DONE did not.
+            if (in_array((string) $body, $colonyDone, true)) {
+                $out[] = "  {$body}: DONE — your share there is finished; nothing to fund, build or bring. Go only to mine a resource no other body yields ({$route}).";
+                continue;
+            }
+            $gear = [];
+            foreach ($b['needs_in_hold'] as $item) {
+                $gear[] = ((int) ($inv[$item] ?? 0)) > 0 ? "{$item} (have)" : "{$item} (MISSING)";
             }
             $blockers = array_values(array_filter(
                 $b['blockers'],
@@ -544,13 +556,11 @@ final class PromptBuilder
                 $b['dv_need'],
                 $route,
                 $gear === [] ? 'none' : implode(', ', $gear),
-                in_array((string) $body, $colonyDone, true)
-                    ? 'your share there is DONE — nothing to fund'
-                    : (in_array((string) $body, $unreachable, true)
-                        ? 'UNREACHABLE — the engine refused every ship you have for good (Triton needs more Δv than any ship can make); do not plan a trip there'
-                        : (in_array((string) $body, $unfounded, true)
+                in_array((string) $body, $unreachable, true)
+                    ? 'UNREACHABLE — the engine refused every ship you have for good (Triton needs more Δv than any ship can make); do not plan a trip there'
+                    : (in_array((string) $body, $unfounded, true)
                         ? "colony NOT FOUNDED — someone must land there and lay it with construct{shape:'colony',body:'{$body}'} before anyone can invest in it"
-                        : 'has colony work for you')),
+                        : 'has colony work for you'),
                 $blockers === [] ? '' : ' Engine: ' . implode(' / ', $blockers),
             );
         }

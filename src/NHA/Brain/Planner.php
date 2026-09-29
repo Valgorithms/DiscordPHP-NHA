@@ -375,6 +375,8 @@ final class Planner
             SET ONE GOAL
             - The most valuable thing the agent can actually get done next, within about an hour of play.
             - Prefer the goal the rest of the board is waiting on: an unfounded colony, gear that opens a new body.
+            - A body marked DONE needs nothing from you: never plan gear or a trip for it. If no body with work left
+              can be reached and nothing takes credits, the goal is to hold: keep materials, sell only surplus.
             - Never a goal the BLOCKED or REJECTIONS lines rule out, and never one needing an item or recipe that
               is not in the observation, the Destinations list, or the recipes.
 

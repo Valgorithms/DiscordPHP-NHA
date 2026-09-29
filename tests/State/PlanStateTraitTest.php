@@ -136,4 +136,31 @@ class PlanStateTraitTest extends NHAUnitTestCase
         self::assertSame(2, $store->advancePlan(7, 1_001, true));
         self::assertNull($store->advancePlan(7, 1_002), 'a claimed advance still waits');
     }
+
+    /**
+     * A hold replaces the plan, carries the world's mark, and is never ticked
+     * off: it stands until the caller lifts it.
+     *
+     * @covers \NHA\State\PlanStateTrait::holdPlan
+     * @covers \NHA\State\PlanStateTrait::planWatch
+     * @covers \NHA\State\PlanStateTrait::clearPlan
+     */
+    public function testAHoldStandsUntilLifted(): void
+    {
+        $store = $this->planned();
+        self::assertNull($store->planWatch(7));
+        self::assertFalse($store->plan(7)['hold']);
+
+        $store->holdPlan(7, 2_000, 'home', 'abc@5');
+
+        self::assertTrue($store->plan(7)['hold']);
+        self::assertSame(StateStore::HOLD_GOAL, $store->plan(7)['goal']);
+        self::assertSame('abc@5', $store->planWatch(7));
+        self::assertNull($store->advancePlan(7, 9_000, true), 'not even a verified advance');
+
+        $store->clearPlan(7);
+        $store->setPlanWatch(7, null);
+        self::assertNull($store->plan(7));
+        self::assertNull($store->planWatch(7));
+    }
 }

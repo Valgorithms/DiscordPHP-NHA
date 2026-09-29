@@ -144,6 +144,20 @@ same `OLLAMA_*` / `NHA_AUTOPLAY_INTERVAL` env, reads the agent token from `var/s
 `NHA_AUTOPLAY_DRY=1` to decide-and-print without submitting. `run-autoplay.sh` / `run-autoplay.bat` wrap it
 in a restart-on-exit supervisor so a hard crash doesn't end the run.
 
+For the compiled runner on Windows, `autoplay-watchdog.ps1` starts it when it is not running and restarts it
+when its log has been silent for 10 minutes (it writes a line every turn, so silence means hung). Each start
+first appends `var/autoplay.log` to `var/autoplay.prev.log`; what the watchdog does goes to `var/watchdog.log`.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1 -Install    # every 5 min and at logon
+powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1              # one check, now
+powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1 -Uninstall
+```
+
+The task runs under a headless console, so it never flashes a window over a full-screen app. While
+`var/watchdog.pause` exists it does nothing: create it before stopping the runner to rebuild it
+(`composer phpacker`), and delete it afterwards.
+
 Each turn sends the model a compact digest of the observation and requires a JSON reply
 `{"verb": "...", "args": {...}, "reason": "..."}`; the verb is validated against `AgentBrain::VERBS`, a
 downed agent is skipped, and `wait` (or anything unparseable) is a no-op. A queued intent is only *queued* —
@@ -153,7 +167,9 @@ A second, rarer call — the **strategist** (`Brain\Planner`) — sets one goal 
 in `var/state.json` and shown in every turn prompt with the current step marked. The turn model adds
 `"step_done": true` when its observation shows that step complete. The plan is revised when it is missing,
 finished, about 40 minutes old, the agent reaches or leaves a body, or it stops working (repeated loop
-breaks, an overrun hold, one proposal blocked again and again) after about 15 minutes of trying. Each draft
+breaks, an overrun hold, one proposal blocked again and again) after about 15 minutes of trying. With nothing
+reachable left to do, the plan is a hold instead, set without asking; the planner is asked again only when an
+objective comes back, the objective board changes or an operator update arrives. Each draft
 is checked first — a body resource it needs but never fetches (`mars_ice` without a trip to Mars), or steps
 written as commands — and sent back once if it fails. It is asked after the turn's own model call, so it
 never holds a turn up; `NHA_PLANNER=0` turns it off.

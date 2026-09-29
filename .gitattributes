@@ -13,6 +13,7 @@
 /AGENTS.md         export-ignore
 /run-autoplay.sh   export-ignore
 /run-autoplay.bat  export-ignore
+/autoplay-watchdog.ps1 export-ignore
 /play_nha.php      export-ignore
 /try_ollama.php    export-ignore
 /phpacker.json     export-ignore

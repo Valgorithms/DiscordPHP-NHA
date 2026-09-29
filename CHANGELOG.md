@@ -6,6 +6,38 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.26.0] - 2026-09-28
+
+### Changed
+- **With nothing left to do, the planner stops planning.** For 37 hours the
+  planner was asked every 40 minutes and kept returning "acquire acid and
+  rubber to craft the acid_skin required for the Venus expedition". Venus was
+  finished, and the agent could get neither input: no acid deposit was in
+  reach, and the depot sells no rubber. The turn model then proposed that
+  craft 755 times. Now, while `_no_objective` holds, the plan is a hold
+  (`StateStore::holdPlan()`), set without a model call, never ticked off, and
+  shown to the turn model as guidance rather than a step. The planner is asked
+  again when an objective comes back, or once when the world's mark changes
+  (`AutoPlayer::worldMark()`: the objective board with its numbers dropped and
+  its lines sorted, plus the newest operator update). Other agents' progress
+  on a module does not count as a change.
+- **A finished body no longer lists arrival gear.** Its Destinations line said
+  "arrival gear: acid_skin (MISSING); your share there is DONE". MISSING read
+  as a task and DONE did not. It now says DONE and keeps only its route, for a
+  mining trip. The planner's prompt adds: a body marked DONE needs nothing,
+  and with nothing reachable to do, the goal is to hold.
+
+### Added
+- **`autoplay-watchdog.ps1`.** It starts the compiled runner when it is not
+  running, and restarts it when its log has been silent for 10 minutes. The
+  runner writes a line every turn, so silence means hung. Each start first
+  appends the old log to `var/autoplay.prev.log`. `-Install` registers it in
+  Task Scheduler (every 5 minutes, and at logon) under a headless console, so
+  it never flashes a window. `var/watchdog.pause` stands it down during a
+  rebuild. Live, Windows closed the runner as "stopped interacting with
+  Windows" (Application Hang) on 2026-09-28 at 14:53, and nothing restarted it
+  for six hours.
+
 ## [3.25.0] - 2026-09-26
 
 ### Changed

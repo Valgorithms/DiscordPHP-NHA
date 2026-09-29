@@ -60,6 +60,13 @@ trait PlanStateTrait
     private const PLAN_STALL_MIN_TICKS = 450;
 
     /**
+     * The goal of the plan {@see holdPlan()} sets.
+     *
+     * @since 3.26.0
+     */
+    public const HOLD_GOAL = 'Hold: nothing the agent can reach has work left';
+
+    /**
      * Adopts a plan, starting at its first step — unless it is the plan
      * already being worked (same goal, same steps), whose progress is kept.
      * Asked to review its own plan, the model often hands it back unchanged,
@@ -90,7 +97,9 @@ trait PlanStateTrait
      * The agent's current plan, or null. `step` is the index of the step being
      * worked on; it equals `count(steps)` once the plan is finished.
      *
-     * @return array{goal: string, steps: list<string>, why: string, step: int, set_at: int, stepped_at: int, where: string}|null
+     * `hold` marks the plan {@see holdPlan()} set.
+     *
+     * @return array{goal: string, steps: list<string>, why: string, step: int, set_at: int, stepped_at: int, where: string, hold: bool}|null
      */
     public function plan(int $agent_id): ?array
     {
@@ -107,6 +116,7 @@ trait PlanStateTrait
             'set_at' => (int) ($p['set_at'] ?? 0),
             'stepped_at' => (int) ($p['stepped_at'] ?? 0),
             'where' => (string) ($p['where'] ?? ''),
+            'hold' => (bool) ($p['hold'] ?? false),
         ];
     }
 
@@ -133,7 +143,7 @@ trait PlanStateTrait
     public function advancePlan(int $agent_id, int $tick, bool $verified = false): ?int
     {
         $p = $this->plan($agent_id);
-        if ($p === null || $p['step'] >= count($p['steps'])
+        if ($p === null || $p['hold'] || $p['step'] >= count($p['steps'])
             || (! $verified && $tick - $p['stepped_at'] < self::PLAN_STEP_MIN_TICKS)
         ) {
             return null;
@@ -144,6 +154,79 @@ trait PlanStateTrait
         $this->save();
 
         return $p['step'] + 1;
+    }
+
+    /**
+     * Replaces the plan with a hold, made without asking the planner: there is
+     * nothing to plan for. It has one step, which nothing ticks off (a hold is
+     * not advanced), so it stands until the caller lifts it.
+     *
+     * Live, with every reachable colony finished, the planner was asked every
+     * 40 minutes for 37 hours and kept finding the same unreachable goal
+     * ("acid_skin for the Venus expedition", Venus long finished). The turn
+     * model then proposed that craft 755 times.
+     *
+     * @param string $watch The world's mark ({@see planWatch()}) the hold was set against.
+     *
+     * @since 3.26.0
+     */
+    public function holdPlan(int $agent_id, int $tick, string $where, string $watch): void
+    {
+        $this->data['agent_plan'][(string) $agent_id] = [
+            'goal' => self::HOLD_GOAL,
+            'steps' => ['wait for the objective board or an operator update to change'],
+            'why' => 'Every colony a ship can reach is finished, nothing on the board takes credits and no vault waits on '
+                . 'its seal. Keep your materials for the next objective: sell only surplus, and start no trip or craft '
+                . 'for a finished colony.',
+            'step' => 0,
+            'set_at' => $tick,
+            'stepped_at' => $tick,
+            'where' => $where,
+            'hold' => true,
+        ];
+        $this->data['agent_plan_watch'][(string) $agent_id] = $watch;
+        $this->save();
+    }
+
+    /**
+     * The world's mark (objective board and operator updates) when the agent
+     * last held, or last asked the planner while holding; null when it is not
+     * holding. A different mark means the world moved and the planner may be
+     * asked once.
+     *
+     * @since 3.26.0
+     */
+    public function planWatch(int $agent_id): ?string
+    {
+        $w = $this->data['agent_plan_watch'][(string) $agent_id] ?? null;
+
+        return is_string($w) ? $w : null;
+    }
+
+    /**
+     * Sets or (null) clears {@see planWatch()}.
+     *
+     * @since 3.26.0
+     */
+    public function setPlanWatch(int $agent_id, ?string $watch): void
+    {
+        if ($watch === null) {
+            unset($this->data['agent_plan_watch'][(string) $agent_id]);
+        } else {
+            $this->data['agent_plan_watch'][(string) $agent_id] = $watch;
+        }
+        $this->save();
+    }
+
+    /**
+     * Drops the plan, so the next {@see planDue()} asks for one.
+     *
+     * @since 3.26.0
+     */
+    public function clearPlan(int $agent_id): void
+    {
+        unset($this->data['agent_plan'][(string) $agent_id]);
+        $this->save();
     }
 
     /** Records that the planner was asked, whether or not it answered. */
