@@ -43,7 +43,7 @@ flowchart TD
     stance --> refrec["last turn rejected &#8594; state.recordRefusal &#40;the exact verb + args&#41;"]
     refrec --> combat{Ladder::defensiveAction<br/>&#40;recent attack / robber / hostile closing while hurt&#41;?}
     combat -- yes --> defend[["&#128737;&#65039; heal / attack back / break contact<br/>&#40;a shot the game just refused &#8212; state.recentRefusal &#8212; is not fired again: break contact&#41;<br/>&#8594; submit &amp; record, skip the brain entirely"]]
-    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;<br/>&#8226; plan &#40;the strategist's goal + steps, current step marked&#41;"]
+    combat -- no --> ctx["build context:<br/>&#8226; known &#8746; dead combine sigs<br/>&#8226; tried sigs &#40;whole run&#41;<br/>&#8226; noteInventorPoints &#8594; researchPaying<br/>&#8226; recent 12 decisions<br/>&#8226; blocked_capabilities &#40;the ledger&#41;<br/>&#8226; departUnreachable &#8746; ledger depart:* targets<br/>&#8226; vetoes &#40;our gates' recent blocks of the model's picks&#41;<br/>&#8226; plan &#40;the strategist's goal + steps, current step marked;<br/>with _no_objective a hold, set without asking: holdPlanning&#41;"]
     ctx --> detect["detectLoop recent<br/>&#40;a 'stuck land/launch' bypasses the cooldown&#41;"]
     detect --> isloop{loop found &amp;<br/>not in cooldown?}
     isloop -- yes --> peek["state.peekNextForcedObjective<br/>&#40;name it for the prompt; do NOT commit yet&#41;"]
@@ -51,7 +51,7 @@ flowchart TD
     isloop -- no --> sup{"SupplyRun::need — an UNFOUNDED destination needs gear<br/>made from a body resource? &#40;and the run not stood down&#41;"}
     sup -- yes --> supA[["&#128666; SupplyRun::step: pack &#8594; elevator &#8594; shed cargo &#8594; depart &#8594; land &#8594; mine &#8594; make &#8594; shed &#8594; home<br/>submitted directly, source supply"]]
     sup -- no --> decide[["brain.decide observation, context, stance"]]
-    decide --> plan["respell the model's args &#40;aluminium &#8594; aluminum&#41;<br/>step_done &#8594; state.advancePlan<br/>planDue &#8594; Planner::plan &#40;not awaited; stored when it lands&#41;"]
+    decide --> plan["respell the model's args &#40;aluminium &#8594; aluminum&#41;<br/>step_done &#8594; state.advancePlan<br/>planDue &#8594; Planner::plan &#40;not awaited; stored when it lands&#41;<br/>holding and the world's mark unchanged &#8594; no call"]
     plan --> waited{decision == null<br/>AND no forced objective?}
     waited -- yes --> recW["record a 'wait'<br/>&#40;visible to detectLoop&#41;"] --> done
     waited -- no --> forced{forced objective<br/>this turn?}

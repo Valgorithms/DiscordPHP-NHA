@@ -39,6 +39,16 @@
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1
     One check now: start the runner if it is down, restart it if it is hung.
+
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1 -StaleMinutes 0
+    Restart the runner now, keeping its log.
+
+.NOTES
+    To stop the runner for good, create var\watchdog.pause (or run -Uninstall)
+    before stopping it. To rebuild it: create the pause file, stop the runner,
+    wait ~5 s, composer phpacker, delete the pause file, run this script once.
+    README.md, "Operating the runner while the watchdog is installed".
 #>
 [CmdletBinding()]
 param(

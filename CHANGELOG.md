@@ -6,6 +6,21 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.26.1] - 2026-09-28
+
+### Changed
+- **How to operate the runner once the watchdog is installed.** It is now
+  written down in the README (a table for stop for good, start, restart now
+  and rebuild, plus the PowerShell for a rebuild) and in AGENTS.md ("The live
+  runner"). In short: create `var/watchdog.pause` before stopping the runner,
+  or the watchdog starts it again within five minutes; and start it through
+  the watchdog, which keeps the old log.
+- `docs/PLAYBOOK.md`'s turn diagram shows the planner's hold.
+
+### Fixed
+- 3.26.0 left `Http::VERSION` (the User-Agent) at 3.25.0 and the README's
+  Versioning line at 3.25.x.
+
 ## [3.26.0] - 2026-09-28
 
 ### Changed

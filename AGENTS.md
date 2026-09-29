@@ -806,6 +806,16 @@ For DiscordPHP builder, interaction, repository, gateway, type-map, or voice int
 
 An open issue labelled `upstream-drift` is a task: the live NHA server changed a rule, route or payload this code relies on. Its body says what moved and where in this repository each change lands. Update the code, then accept the baseline in the same commit; the next scheduled check closes the issue.
 
+## The live runner
+
+Where it is deployed, the live agent is driven by the compiled headless runner `bin/build/autoplay/windows/windows-x64.exe`, which loads `src/` and `vendor/` from the checkout at runtime. A Task Scheduler task, `NHA autoplay watchdog` (`autoplay-watchdog.ps1`), starts it when it is down and restarts it when `var/autoplay.log` has been silent for 10 minutes.
+
+- **Stand the watchdog down before stopping the runner.** Create `var/watchdog.pause` first, or the runner is started again within five minutes, possibly from a binary that is halfway through being rebuilt. README, "Operating the runner while the watchdog is installed", has stop, restart and rebuild.
+- **After shipping a change:** pause, stop the runner, `composer phpacker`, delete the pause file, then run the watchdog once. The running process keeps the classes it already loaded, so even a `src/`-only change needs the restart.
+- **Start the runner through the watchdog, never with a bare `Start-Process`.** `var/autoplay.log` (the runner's stdout) is the only record of why each turn did what it did. The watchdog appends it to `var/autoplay.prev.log` before the new run truncates it.
+- **Match the runner by its full path.** Other projects build their own `windows-x64.exe`.
+- **Judge it by outcomes, not intents:** `GET /agent/{id}` → `recent[].data.status`. `var/watchdog.log` records every start and restart.
+
 Live integration tests require `DISCORD_TOKEN` or `TOKEN` and `TEST_CHANNEL`; ordinary unit tests must remain safe without live credentials.
 
 NHA action credentials must not be committed to `.env`, fixtures, logs, or source control.

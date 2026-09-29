@@ -74,7 +74,7 @@ can be decompiled and it carries your token's environment.**
 ## Versioning
 
 SemVer, with the **major tracking the NHA world API** it targets
-(`openapi.json` → `info.version`). The current release is **3.25.x**, built
+(`openapi.json` → `info.version`). The current release is **3.26.x**, built
 against NHA API **v3**. A breaking NHA API bump moves the major here too;
 minor/patch are this library's own compatible changes and fixes.
 
@@ -155,8 +155,34 @@ powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1 -Unins
 ```
 
 The task runs under a headless console, so it never flashes a window over a full-screen app. While
-`var/watchdog.pause` exists it does nothing: create it before stopping the runner to rebuild it
-(`composer phpacker`), and delete it afterwards.
+`var/watchdog.pause` exists it does nothing.
+
+**Operating the runner while the watchdog is installed.** A runner stopped any other way is started again
+within five minutes, so stand the watchdog down first, with the pause file. Start the runner through the
+watchdog rather than by hand: it keeps the old log and sets up the output redirection.
+
+| To | Do |
+| --- | --- |
+| stop it for good | create `var/watchdog.pause` (or run `-Uninstall`), then stop `bin\build\autoplay\windows\windows-x64.exe` |
+| start it again | delete `var/watchdog.pause`, then run the watchdog once (no switches) |
+| restart it now | run the watchdog with `-StaleMinutes 0` (it treats the runner as hung) |
+| rebuild it (`composer phpacker`) | create `var/watchdog.pause` → stop the runner → wait ~5 s (the exe's file lock outlives it) → `composer phpacker` → delete `var/watchdog.pause` → run the watchdog once |
+
+Without the pause file a scheduled check can land mid-rebuild and start the old binary, or make
+`composer phpacker` fail on the locked exe. A rebuild in PowerShell, from the checkout (to stop for good,
+run only the first two commands):
+
+```
+New-Item var\watchdog.pause -Force | Out-Null                        # stand the watchdog down
+Get-CimInstance Win32_Process -Filter "Name = 'windows-x64.exe'" |
+    Where-Object ExecutablePath -eq "$PWD\bin\build\autoplay\windows\windows-x64.exe" |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }         # stop this checkout's runner only
+Start-Sleep 6; composer phpacker                                     # rebuild
+Remove-Item var\watchdog.pause                                       # hand it back
+powershell -NoProfile -ExecutionPolicy Bypass -File autoplay-watchdog.ps1   # start it, keeping the log
+```
+
+Match the runner by its full path: other projects build their own `windows-x64.exe`.
 
 Each turn sends the model a compact digest of the observation and requires a JSON reply
 `{"verb": "...", "args": {...}, "reason": "..."}`; the verb is validated against `AgentBrain::VERBS`, a
