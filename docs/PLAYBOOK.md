@@ -184,7 +184,10 @@ cockpit, ion jet, one wing, landing gear and three tanks, mass 295, 600 units,
 as the way out). Helium3 is mined only on the Moon, six a turn, and the Moon is
 reached from the top of the sky: `land_moon` refuses anything below altitude
 600, and decay takes two a tick, so the ride and the landing are two intents
-sent back to back to apply in the same tick. It mines 60 past the target, rides
+sent back to back to apply in the same tick. On the Moon the live observation
+still reads `earth_orbit`, so the decision recorded is the landing, and next
+turn's outcome check reads the engine's answer (`ReachRun::landed()`: "set
+down on the Moon", "mined the Moon"). It mines 60 past the target, rides
 down, and hands the trip itself to ordinary flight. Helium3 joined
 `FLIGHT_CONSUMABLES`, so no research combine eats it. A refusal stands the run
 down for 600 ticks, except a ride, landing, mine or walk, which it simply makes

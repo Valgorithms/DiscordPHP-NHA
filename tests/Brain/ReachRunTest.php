@@ -132,6 +132,30 @@ class ReachRunTest extends NHAUnitTestCase
         self::assertSame('ride', $this->turn($this->world($moon(1_058 + ReachRun::MARGIN)))['verb'], 'then down the elevator');
     }
 
+    /**
+     * Live, on the Moon, the observation read `earth_orbit` at a decaying
+     * altitude; only the engine's answer to the landing said where the agent
+     * was.
+     */
+    public function testTheEngineAnswerSaysTheAgentIsOnTheMoon(): void
+    {
+        $reach = static fn(string $verb): array => ['verb' => $verb, 'source' => 'reach'];
+
+        self::assertTrue(ReachRun::landed($reach('land_moon'), ['status' => 'applied', 'result' => 'set down on the Moon again — mine helium-3/regolith, raise a ziggurat']));
+        self::assertTrue(ReachRun::landed($reach('mine'), ['status' => 'applied', 'result' => 'mined the Moon: +6 helium-3 (super-fuel), +12 regolith']));
+        self::assertTrue(ReachRun::landed($reach('mine'), ['status' => 'pending']), 'not resolved yet: still there');
+        self::assertFalse(ReachRun::landed($reach('mine'), []), 'no answer to read');
+        self::assertFalse(ReachRun::landed($reach('land_moon'), ['status' => 'rejected', 'result' => 'climb to lunar orbit (altitude 600) first — the Moon is reached from the top of the sky']));
+        self::assertFalse(ReachRun::landed($reach('mine'), ['status' => 'applied', 'result' => 'mined 15 copper']), 'mined on Earth');
+        self::assertFalse(ReachRun::landed($reach('ride'), ['status' => 'applied', 'result' => 'rode the orbital elevator back DOWN']));
+        self::assertFalse(ReachRun::landed(['verb' => 'mine', 'source' => 'model'], ['status' => 'applied', 'result' => 'mined the Moon']), 'not the run');
+
+        $orbit = $this->world(['vehicles' => [self::LANDER], 'in_space' => true, 'altitude' => 568, 'inventory' => ['helium3' => 6],
+            'expansion' => ['place' => ['where' => 'earth_orbit', 'altitude' => 568]]]);
+        self::assertSame('ride', $this->turn($orbit)['verb'], 'the observation alone: down and try again');
+        self::assertSame('mine', ReachRun::turn($orbit, ['deimos', 'mars'], ['triton'], true)['verb'], 'the landing applied: mine');
+    }
+
     public function testFuelledTheTripIsLeftToOrdinaryFlight(): void
     {
         $raw = $this->world(['vehicles' => [self::HEAVY, self::LANDER], 'inventory' => ['helium3' => 1_100]]);

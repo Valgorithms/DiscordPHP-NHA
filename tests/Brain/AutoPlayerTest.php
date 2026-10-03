@@ -3699,8 +3699,33 @@ class AutoPlayerTest extends NHAUnitTestCase
 
         self::assertSame(['ride', 'land_moon'], [$this->posts[0][1]['verb'], $this->posts[1][1]['verb']]);
         self::assertSame('reach', $player->lastTurn(142285)['source']);
-        self::assertSame('reach', $state->getLastDecision(142285)['source']);
+        self::assertSame(['reach', 'land_moon'], [$state->getLastDecision(142285)['source'], $state->getLastDecision(142285)['verb']], 'the landing is what next turn checks');
         self::assertStringStartsWith('🚀 Agent #142285 reach run → **ride** + **land_moon**', $line);
+    }
+
+    /**
+     * Live: on the Moon the observation read `earth_orbit` at a decaying
+     * altitude, and the run rode straight back down. The engine's answer to
+     * the landing is what says the agent is there.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAfterTheLandingAppliesTheRunMines(): void
+    {
+        $state = new StateStore($this->statePath);
+        $lander = ['name' => 'reach_lander', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 600, 'mass' => 295, 'thrust' => 700, 'gear' => 1];
+        $moon = $this->reachHome($state, [$lander], ['helium3' => 6]);
+        $moon['in_space'] = true;
+        $moon['altitude'] = 568;
+        $moon['expansion']['place'] = ['where' => 'earth_orbit', 'altitude' => 568];
+        $moon['status'] = 'applied';
+        $moon['result'] = 'set down on the Moon again — mine helium-3/regolith, raise a ziggurat';
+        $state->recordDecision(142285, ['verb' => 'land_moon', 'args' => [], 'reason' => '', 'queued_intent' => 999, 'tick' => 1_829_350, 'source' => 'reach']);
+        $player = new AutoPlayer($this->nhaWith($moon), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame(['mine', ['n' => 6]], [$this->posts[0][1]['verb'], $this->posts[0][1]['args']]);
+        self::assertSame('reach', $player->lastTurn(142285)['source']);
     }
 
     /**

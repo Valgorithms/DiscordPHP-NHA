@@ -6,6 +6,20 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.27.2] - 2026-10-03
+
+### Fixed
+- **The reach run landed on the Moon and rode straight back down.** The
+  ride and `land_moon` applied in the same tick as designed ("set down on the
+  Moon again"). But on the Moon the live observation reads `earth_orbit` at a
+  decaying altitude, not the engine's `moon_surface`, so the next turn the run
+  thought it was in orbit, rode down and landed again, every other turn, for
+  three minutes. A manual `mine` there answered "mined the Moon: +6 helium-3".
+  The engine's answer is now the signal (`ReachRun::landed()`): for the
+  two-intent move the decision recorded is the landing, so next turn's
+  outcome check reads its answer. A `land_moon` or `mine` applied with an
+  answer about the Moon, or still pending, means the agent is there and mines.
+
 ## [3.27.1] - 2026-10-03
 
 ### Fixed

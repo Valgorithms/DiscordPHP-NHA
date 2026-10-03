@@ -140,10 +140,11 @@ final class ReachRun
      * @param array<string,mixed> $raw
      * @param list<string>        $colonyDone
      * @param list<string>        $wanted     {@see plan()}
+     * @param bool                $onMoon     The engine's last answer put the agent on the Moon ({@see landed()}).
      *
      * @return array{verb: string, args: array<string,mixed>, why: string, then?: array{verb: string, args: array<string,mixed>}}|null
      */
-    public static function turn(array $raw, array $colonyDone, array $wanted): ?array
+    public static function turn(array $raw, array $colonyDone, array $wanted, bool $onMoon = false): ?array
     {
         if (Ladder::inTransit($raw)) {
             return null;
@@ -151,7 +152,7 @@ final class ReachRun
         $plan = self::plan($raw, $colonyDone, $wanted);
         $he = (int) (((array) ($raw['inventory'] ?? []))['helium3'] ?? 0);
 
-        if (self::onMoon($raw)) {
+        if ($onMoon || self::onMoon($raw)) {
             if ($plan !== null && $he < $plan['helium3'] + self::MARGIN) {
                 return self::act('mine', ['n' => self::MOON_YIELD], "Moon: helium3 {$he}/" . ($plan['helium3'] + self::MARGIN) . " for {$plan['body']}");
             }
@@ -175,13 +176,43 @@ final class ReachRun
     }
 
     /**
-     * Whether the agent stands on the Moon (`engine.py` `place()`).
+     * Whether the observation says the agent stands on the Moon. The engine's
+     * `place()` can, but live it does not: on the Moon the observation reads
+     * `earth_orbit` at a decaying altitude, and the only sign is the engine's
+     * answer to the last move ({@see landed()}).
      *
      * @param array<string,mixed> $raw
      */
     public static function onMoon(array $raw): bool
     {
         return (((array) (((array) ($raw['expansion'] ?? []))['place'] ?? []))['where'] ?? '') === 'moon_surface';
+    }
+
+    /**
+     * Whether the run's last move left the agent on the Moon: a `land_moon`
+     * or a `mine` the engine applied with an answer about the Moon ("set down
+     * on the Moon", "mined the Moon: +6 helium-3"), or one still pending.
+     *
+     * Live, 2026-10-03: `land_moon` applied in the same tick as the ride, but
+     * the next observation read `earth_orbit`, so the run rode straight back
+     * down and landed again, every other turn, for three minutes.
+     *
+     * @param array<string,mixed>|null $last    The last recorded decision.
+     * @param array<string,mixed>      $outcome Its intent's status.
+     */
+    public static function landed(?array $last, array $outcome): bool
+    {
+        if (($last['source'] ?? '') !== 'reach' || ! in_array((string) ($last['verb'] ?? ''), ['land_moon', 'mine'], true)) {
+            return false;
+        }
+        $status = (string) ($outcome['status'] ?? '');
+        if (in_array($status, ['pending', 'queued'], true)) {
+            return true;
+        }
+
+        // Applied with an answer about the Moon. Anything else (rejected, or
+        // no answer to read) leaves the run to the observation.
+        return $status === 'applied' && preg_match('/\bthe moon\b/i', (string) ($outcome['result'] ?? '')) === 1;
     }
 
     /**

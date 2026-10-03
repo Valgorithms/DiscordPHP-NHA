@@ -832,7 +832,7 @@ final class AutoPlayer
         // Unfounded, or founded with a body-resource line only someone on
         // site can fill (3.27.1: Triton, laid by another agent who capped out).
         $wanted = array_values(array_unique(array_merge($this->state->unfounded($agent_id), $this->state->presenceNeeded($agent_id))));
-        $move = ReachRun::turn($raw, $colonyDone, $wanted);
+        $move = ReachRun::turn($raw, $colonyDone, $wanted, ReachRun::landed($last, $oc));
 
         return $move === null ? null : $move + ['reason' => "reach run — {$move['why']}"];
     }
@@ -2111,14 +2111,18 @@ final class AutoPlayer
                 $this->lastTurn[$agent_id] = ['tick' => $tick, 'source' => 'reach', 'verb' => $reach['verb']];
                 $then = $reach['then'] ?? null;
 
+                // With a second intent, the decision recorded is the second one:
+                // its outcome is what next turn reads (did the Moon landing
+                // apply? The observation does not say, {@see ReachRun::landed()}).
                 return $this->nha->intentWithToken($agent_id, $token, $reach['verb'], $reach['args'])
-                    ->then(fn($queued) => $then === null ? $queued : $this->nha->intentWithToken($agent_id, $token, $then['verb'], $then['args'])
-                        ->then(static fn() => $queued, static fn() => $queued))
-                    ->then(function ($queued) use ($agent_id, $reach, $then, $tick, $altNow) {
+                    ->then(fn($queued) => $then === null ? [$reach, $queued] : $this->nha->intentWithToken($agent_id, $token, $then['verb'], $then['args'])
+                        ->then(static fn($second) => [$then, $second], static fn() => [$reach, $queued]))
+                    ->then(function (array $sent) use ($agent_id, $reach, $then, $tick, $altNow) {
+                        [$recorded, $queued] = $sent;
                         $queuedId = ((array) $queued)['queued_intent'] ?? null;
                         $this->state->recordDecision($agent_id, [
-                            'verb' => $reach['verb'],
-                            'args' => $reach['args'],
+                            'verb' => $recorded['verb'],
+                            'args' => $recorded['args'],
                             'reason' => $reach['reason'],
                             'queued_intent' => $queuedId,
                             'tick' => $tick,
