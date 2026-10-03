@@ -829,7 +829,10 @@ final class AutoPlayer
 
             return null;
         }
-        $move = ReachRun::turn($raw, $colonyDone, $this->state->unfounded($agent_id));
+        // Unfounded, or founded with a body-resource line only someone on
+        // site can fill (3.27.1: Triton, laid by another agent who capped out).
+        $wanted = array_values(array_unique(array_merge($this->state->unfounded($agent_id), $this->state->presenceNeeded($agent_id))));
+        $move = ReachRun::turn($raw, $colonyDone, $wanted);
 
         return $move === null ? null : $move + ['reason' => "reach run — {$move['why']}"];
     }
@@ -1739,6 +1742,7 @@ final class AutoPlayer
                 $this->state->setColonyDone($agent_id, Objectives::bodiesWithNoWorkForUs($e, $agent_id));
                 $this->state->recordObjectives($agent_id, $tick, Objectives::digest($e, $agent_id));
                 $this->state->recordUnfounded($agent_id, Objectives::unfoundedBodies($e));
+                $this->state->recordPresenceNeeded($agent_id, Objectives::bodiesNeedingPresence($e, $agent_id));
                 // What a board still wants that the depot actually sells —
                 // the quartermaster stocks toward it so the credits and
                 // materials are there when a body opens up.

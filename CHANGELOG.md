@@ -6,6 +6,20 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.27.1] - 2026-10-03
+
+### Fixed
+- **The reach run stood aside for a founded Triton.** Live, minutes after
+  3.27.0 shipped: another agent had already reached Triton and laid the
+  colony, so Triton was no longer unfounded, and the run (which, like the
+  supply run, served unfounded bodies only) declined. That agent had capped
+  out at 60% of every nitrogen_ice and neon line, and each module wants two
+  funders, so no module could finish without a second agent mining on Triton.
+  The run now serves any body the agent is wanted at in person:
+  `Objectives::bodiesNeedingPresence()` adds, to the unfounded colonies, any
+  open line of a resource mined only on that body where the agent is under its
+  cap. The objective poll records it (`StateStore::recordPresenceNeeded()`).
+
 ## [3.27.0] - 2026-10-03
 
 ### Added

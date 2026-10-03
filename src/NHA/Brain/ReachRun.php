@@ -81,22 +81,24 @@ final class ReachRun
     /**
      * The reach plan for the first body that needs one, or null.
      *
-     * A body qualifies when its colony is unfounded, it is not finished for
-     * the agent, and its Δv is under the ceiling. `ready` says the agent can
-     * already go and come back on what it holds.
+     * A body qualifies when the agent is wanted there in person, it is not
+     * finished for the agent, and its Δv is under the ceiling. `ready` says the
+     * agent can already go and come back on what it holds.
      *
      * @param array<string,mixed> $raw
      * @param list<string>        $colonyDone
-     * @param list<string>        $unfounded
+     * @param list<string>        $wanted     Bodies the agent has to stand on to help: an unfounded
+     *                                        colony, or a line only on-site mining can fill
+     *                                        ({@see Objectives::bodiesNeedingPresence()}).
      *
      * @return array{body: string, dv: int, transit: int, build: bool, helium3: int, ready: bool}|null
      */
-    public static function plan(array $raw, array $colonyDone, array $unfounded): ?array
+    public static function plan(array $raw, array $colonyDone, array $wanted): ?array
     {
         $inv = (array) ($raw['inventory'] ?? []);
         foreach (Bodies::all($raw) as $dest => $b) {
             $dest = (string) $dest;
-            if (! in_array($dest, $unfounded, true) || in_array($dest, $colonyDone, true)) {
+            if (! in_array($dest, $wanted, true) || in_array($dest, $colonyDone, true)) {
                 continue;
             }
             $dv = (int) $b['dv_need'];
@@ -137,16 +139,16 @@ final class ReachRun
      *
      * @param array<string,mixed> $raw
      * @param list<string>        $colonyDone
-     * @param list<string>        $unfounded
+     * @param list<string>        $wanted     {@see plan()}
      *
      * @return array{verb: string, args: array<string,mixed>, why: string, then?: array{verb: string, args: array<string,mixed>}}|null
      */
-    public static function turn(array $raw, array $colonyDone, array $unfounded): ?array
+    public static function turn(array $raw, array $colonyDone, array $wanted): ?array
     {
         if (Ladder::inTransit($raw)) {
             return null;
         }
-        $plan = self::plan($raw, $colonyDone, $unfounded);
+        $plan = self::plan($raw, $colonyDone, $wanted);
         $he = (int) (((array) ($raw['inventory'] ?? []))['helium3'] ?? 0);
 
         if (self::onMoon($raw)) {

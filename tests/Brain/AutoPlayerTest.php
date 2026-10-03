@@ -3704,6 +3704,31 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Live after 3.27.0: Triton had been laid by another agent, so it was no
+     * longer unfounded, and the run stood aside. Its nitrogen_ice and neon
+     * lines still needed someone mining on site.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testAFoundedBodyThatNeedsSomeoneOnSiteStillGetsTheRun(): void
+    {
+        $state = new StateStore($this->statePath);
+        $lander = ['name' => 'reach_lander', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 600, 'mass' => 295, 'thrust' => 700, 'gear' => 1];
+        $home = $this->reachHome($state, [$lander]);
+        $state->recordUnfounded(142285, []);
+        $state->recordPresenceNeeded(142285, ['triton']);
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame('reach', $player->lastTurn(142285)['source']);
+
+        $state->recordPresenceNeeded(142285, []);
+        $this->posts = [];
+        $player->step(142285, 'tok');
+        self::assertNotSame('reach', $player->lastTurn(142285)['source'] ?? null, 'nobody needs us there: no run');
+    }
+
+    /**
      * A refused part (the depot out of stock, say) stands the run down rather
      * than resubmitting it every turn; a refused ride or Moon landing (a
      * missed tick) does not.

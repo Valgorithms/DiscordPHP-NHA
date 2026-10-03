@@ -86,5 +86,32 @@ final class ObjectivesTest extends TestCase
         self::assertNull(Objectives::fundableWithCredits([], self::ME));
         self::assertNull(Objectives::forwardBaseTarget([], self::ME));
         self::assertStringContainsString('No open colony work', Objectives::digest([], self::ME));
+        self::assertSame([], Objectives::bodiesNeedingPresence([], self::ME));
+    }
+
+    /**
+     * Live, 2026-10-03: Triton laid by another agent, who capped out at 60%
+     * of every nitrogen_ice and neon line. Those lines can only be filled by
+     * someone mining on Triton, so Triton needs the agent there in person.
+     * Mars's open line needs it too; Phobos's buyable line where we are
+     * capped does not.
+     */
+    public function testABodyNeedsTheAgentThereWhenOnlyOnSiteMiningCanFillALine(): void
+    {
+        $board = $this->board();
+        $board['bodies']['triton'] = ['colony' => ['colony_exists' => true, 'cap_pct_per_agent' => 60, 'modules' => [
+            ['module' => 'geyser_mast', 'complete' => false,
+                'need' => ['superalloy' => 180, 'titanium' => 200, 'nitrogen_ice' => 200],
+                'remaining' => ['superalloy' => 159, 'titanium' => 151, 'nitrogen_ice' => 80],
+                'contrib' => ['50001' => ['superalloy' => 21, 'titanium' => 49, 'nitrogen_ice' => 120]]],
+        ]]];
+
+        self::assertSame(['mars', 'triton'], Objectives::bodiesNeedingPresence($board, self::ME));
+
+        $board['bodies']['triton']['colony']['modules'][0]['contrib'][(string) self::ME] = ['nitrogen_ice' => 120];
+        self::assertSame(['mars'], Objectives::bodiesNeedingPresence($board, self::ME), 'capped on it ourselves: nothing more to bring');
+
+        $board['bodies']['moonless'] = ['colony' => ['colony_exists' => false, 'modules' => []]];
+        self::assertContains('moonless', Objectives::bodiesNeedingPresence($board, self::ME), 'unfounded: someone must lay it');
     }
 }

@@ -238,6 +238,49 @@ final class Objectives
     }
 
     /**
+     * Bodies the agent has to stand on to help, which credits from home cannot
+     * do: a colony nobody has laid, or an open line of a resource mined only on
+     * that body ({@see GameData::BODY_MINE}) where the agent is still under its
+     * per-agent cap.
+     *
+     * Live, 2026-10-03: one agent reached Triton, laid the colony and capped
+     * out at 60% of every nitrogen_ice and neon line. Each module wants two
+     * funders, so none could finish until a second agent mined on Triton.
+     *
+     * @param array<string,mixed> $expansion
+     *
+     * @return list<string>
+     *
+     * @since 3.27.1
+     */
+    public static function bodiesNeedingPresence(array $expansion, int $agent_id): array
+    {
+        $out = self::unfoundedBodies($expansion);
+        foreach ((array) ($expansion['bodies'] ?? []) as $body => $entry) {
+            $colony = (array) (((array) $entry)['colony'] ?? []);
+            $cap = (int) ($colony['cap_pct_per_agent'] ?? 100);
+            foreach ((array) ($colony['modules'] ?? []) as $m) {
+                $m = (array) $m;
+                if (! empty($m['complete'])) {
+                    continue;
+                }
+                $mine = (array) (((array) ($m['contrib'] ?? []))[(string) $agent_id] ?? []);
+                foreach ((array) ($m['remaining'] ?? []) as $res => $left) {
+                    if ((int) $left < 1 || ! in_array((string) $body, GameData::minedOn((string) $res), true)) {
+                        continue;
+                    }
+                    if ((int) ($mine[$res] ?? 0) < intdiv((int) (((array) ($m['need'] ?? []))[$res] ?? 0) * $cap, 100)) {
+                        $out[] = (string) $body;
+                        continue 3;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
      * A compact, factual digest of the board for the model — used when the
      * deterministic ladder has run out of ideas and the agent is looping, so
      * the LLM is choosing from what the world actually says rather than from

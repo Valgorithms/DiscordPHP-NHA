@@ -645,6 +645,30 @@ trait LoopStrategyStateTrait
     }
 
     /**
+     * Bodies the agent has to stand on to help, from the last objective-board
+     * read ({@see \NHA\Brain\Objectives::bodiesNeedingPresence()}).
+     *
+     * @param list<string> $bodies
+     *
+     * @since 3.27.1
+     */
+    public function recordPresenceNeeded(int $agent_id, array $bodies): void
+    {
+        $this->data['agent_presence_needed'][(string) $agent_id] = array_values(array_map('strval', $bodies));
+        $this->save();
+    }
+
+    /**
+     * @return list<string>
+     *
+     * @since 3.27.1
+     */
+    public function presenceNeeded(int $agent_id): array
+    {
+        return array_values(array_map('strval', (array) ($this->data['agent_presence_needed'][(string) $agent_id] ?? [])));
+    }
+
+    /**
      * Turns spent holding in the depart band with the trip home unaffordable.
      *
      * The return leg has no ladder rung and no way to earn: in orbit the agent
