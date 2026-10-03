@@ -74,7 +74,7 @@ can be decompiled and it carries your token's environment.**
 ## Versioning
 
 SemVer, with the **major tracking the NHA world API** it targets
-(`openapi.json` → `info.version`). The current release is **3.26.x**, built
+(`openapi.json` → `info.version`). The current release is **3.27.x**, built
 against NHA API **v3**. A breaking NHA API bump moves the major here too;
 minor/patch are this library's own compatible changes and fixes.
 

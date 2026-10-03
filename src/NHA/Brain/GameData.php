@@ -114,6 +114,83 @@ final class GameData
     public const DV_CEILING = 300;
 
     /**
+     * Exhaust velocity per fuel (`engine.py` `FUEL_VE`), in the engine's own
+     * order: on a tie in Δv the first wins, as in `dv_capacity`.
+     *
+     * @var array<string,int>
+     *
+     * @since 3.27.0
+     */
+    public const FUEL_VE = ['helium3' => 500, 'methalox' => 300, 'cryo_fuel' => 300, 'oil' => 100, 'coal' => 100, 'wood' => 100, 'carbon' => 100];
+
+    /** The ion drive's efficiency (`engine.py` `ENGINE_EFF['ion']`); every interplanetary ship has one. */
+    public const ION_EFF = 3;
+
+    /** Wet mass each loaded fuel unit adds (`engine.py` `FUEL_MASS`). */
+    public const FUEL_MASS = 5;
+
+    /** Transit ticks per mid-course correction burn (`engine.py` `CORRECTION_EVERY`). */
+    public const CORRECTION_EVERY = 20;
+
+    /**
+     * One leg as `depart` judges it (`engine.py` `dv_capacity` and the
+     * correction gate after it, transcribed 2026-10-03): the ship loads
+     * `min(held, cap)` units, makes `loaded·ve·eff ÷ (mass + 5·loaded)`, burns
+     * `need·wet ÷ (ve·eff)` to leave, and must keep one unit per
+     * {@see CORRECTION_EVERY} transit ticks for the crossing.
+     *
+     * Fuel held beyond the tank is neither loaded nor burned, which is how a
+     * ship carries the fuel for its trip home.
+     *
+     * @return array{dv: int, loaded: int, cost: int, corrections: int, ok: bool}
+     *
+     * @since 3.27.0
+     */
+    public static function leg(int $mass, int $cap, int $held, int $need, int $transit, int $ve = 500, int $eff = self::ION_EFF): array
+    {
+        $loaded = max(0, min($held, $cap));
+        $wet = max(1, $mass) + $loaded * self::FUEL_MASS;
+        $dv = intdiv($loaded * $ve * $eff, $wet);
+        $cost = intdiv($need * $wet, $ve * $eff);
+        $corrections = intdiv(max(0, $transit), self::CORRECTION_EVERY);
+
+        return [
+            'dv' => $dv, 'loaded' => $loaded, 'cost' => $cost, 'corrections' => $corrections,
+            'ok' => $loaded >= 1 && $dv >= $need && $loaded - $cost >= $corrections,
+        ];
+    }
+
+    /**
+     * The least helium3 to hold at Earth for a trip out and back on one hull,
+     * or null when the hull cannot make it on any load up to `$max`.
+     *
+     * The way back is taken to be as hard as the way out (same Δv, same
+     * crossing). The engine's own return is never harder: Triton is 260 out
+     * and 250 home, and since 2026-09-30 a ship leaves by the thrust gate it
+     * arrived under. Corrections are charged to helium3 too, although the
+     * engine burns the cheapest fuel held for them.
+     *
+     * @since 3.27.0
+     */
+    public static function roundTripHelium3(int $mass, int $cap, int $need, int $transit, int $max = 3000): ?int
+    {
+        if (! self::leg($mass, $cap, $cap, $need, $transit)['ok']) {
+            return null; // not even on full tanks
+        }
+        for ($held = 1; $held <= $max; ++$held) {
+            $out = self::leg($mass, $cap, $held, $need, $transit);
+            if (! $out['ok']) {
+                continue;
+            }
+            if (self::leg($mass, $cap, $held - $out['cost'] - $out['corrections'], $need, $transit)['ok']) {
+                return $held;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Whether a "Δv too low" refusal names a need no ship can ever meet
      * ({@see DV_CEILING}), so the destination is unreachable rather than
      * waiting on fuel.

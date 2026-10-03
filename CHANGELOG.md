@@ -6,6 +6,39 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.27.0] - 2026-10-03
+
+### Added
+- **The reach run (`Brain\ReachRun`): a ship and fuel for Triton.** The
+  operator brought Triton down from Δv 320 (past the ceiling of 300 for any
+  ship) to 260 out and 250 home. The agent noticed and held for the window as
+  "flight-ready", but its best ship made 136 on cryo_fuel. The new preflight
+  said so: "Δv too low … carry helium3 (the only fuel that reaches the outer
+  system)". Its hulls weigh 600–1,000 with at most 640 of tank, and 260 needs
+  a helium3 load of 1.3 × the ship's mass, so none could make it. For an
+  unfounded body under the ceiling that no ship held can reach and come back
+  from, the run:
+  - builds the lander (`ReachRun::LANDER`): cockpit, ion jet, one wing,
+    landing gear and three tanks. Mass 295, 600 of tank, 273 on full tanks.
+  - fetches helium3 from the Moon for the round trip: 1,058 for Triton, the
+    way back taken as hard as the way out. The Moon is reached by riding the
+    tall elevator to altitude 600 and `land_moon` in the same tick (decay takes
+    two a tick and `land_moon` refuses anything lower), so that move is two
+    intents sent back to back. It mines six a turn, 60 past the target, then
+    rides down.
+  - hands the trip itself to ordinary flight, which holds in the depart band
+    and leaves when the window opens.
+  A refused part stands the run down for 600 ticks; a refused ride, landing,
+  mine or walk is simply made again.
+- `GameData::leg()` and `roundTripHelium3()`: `depart`'s own arithmetic
+  (`dv_capacity` and the correction gate), with `FUEL_VE`, `ION_EFF`,
+  `FUEL_MASS` and `CORRECTION_EVERY`.
+
+### Changed
+- Helium3 is a flight consumable: no research or model combine eats it. The
+  ladder crafts an ion_thruster from iridium only; it buys one when it has the
+  credits anyway.
+
 ## [3.26.1] - 2026-09-28
 
 ### Changed

@@ -3660,6 +3660,91 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * The live state of 2026-10-03, with the lander built: Triton at Δv 260,
+     * no helium3, standing on the 860-tall elevator.
+     */
+    private function reachHome(StateStore $state, array $vehicles, array $inv = []): array
+    {
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, ['triton']);
+        $home = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => false]);
+        unset($home['modules']); // every GET answers with this payload; a board here would reopen Deimos
+        $home['position'] = [77, 140];
+        $home['elevators'] = [['x' => 77, 'y' => 140, 'height' => 860]];
+        $home['vehicles'] = $vehicles;
+        $home['expansion']['windows']['triton'] = ['open' => false, 'dv_need' => 260, 'transit_ticks' => 260, 'opens_in' => 449];
+        $home['inventory'] = $inv + ['credits' => 400_000, 'thermal_core' => 1, 'metal' => 138, 'crystal' => 500, 'ion_thruster' => 1];
+        $home['loose_parts'] = ['wing'];
+
+        return $home;
+    }
+
+    /**
+     * Live: Triton came back in reach at Δv 260 and the agent held for the
+     * window as "flight-ready", on a ship that made 136. The reach run fits
+     * the lander and fetches helium3; the Moon landing has to apply in the
+     * same tick as the ride, so both intents go out together.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheReachRunTakesTheTurnAndLandsOnTheMoonInOneTick(): void
+    {
+        $state = new StateStore($this->statePath);
+        $lander = ['name' => 'reach_lander', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 600, 'mass' => 295, 'thrust' => 700, 'gear' => 1];
+        $player = new AutoPlayer($this->nhaWith($this->reachHome($state, [$lander])), $this->brainReturning('{"verb":"depart","args":{"dest":"triton"}}'), $state);
+        $line = '';
+        $player->step(142285, 'tok')->then(function (string $l) use (&$line): void {
+            $line = $l;
+        });
+
+        self::assertSame(['ride', 'land_moon'], [$this->posts[0][1]['verb'], $this->posts[1][1]['verb']]);
+        self::assertSame('reach', $player->lastTurn(142285)['source']);
+        self::assertSame('reach', $state->getLastDecision(142285)['source']);
+        self::assertStringStartsWith('🚀 Agent #142285 reach run → **ride** + **land_moon**', $line);
+    }
+
+    /**
+     * A refused part (the depot out of stock, say) stands the run down rather
+     * than resubmitting it every turn; a refused ride or Moon landing (a
+     * missed tick) does not.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testARefusedBuildStandsTheReachRunDown(): void
+    {
+        $heavy = ['name' => 'vehicle', 'flies' => true, 'orbital_engine' => true, 'fuel_cap' => 640, 'mass' => 985, 'thrust' => 2200, 'gear' => 1];
+        foreach (['build' => true, 'ride' => false] as $verb => $paused) {
+            @unlink($this->statePath);
+            $this->posts = [];
+            $state = new StateStore($this->statePath);
+            $home = $this->reachHome($state, [$heavy]);
+            $state->recordDecision(142285, ['verb' => $verb, 'args' => [], 'reason' => '', 'queued_intent' => 999, 'tick' => 1, 'source' => 'reach']);
+            $refused = array_replace($home, ['status' => 'rejected', 'result' => "insufficient for {$verb}"]);
+            $player = new AutoPlayer($this->nhaWith($refused), $this->brainReturning('{"verb":"mine","args":{"n":2}}'), $state);
+            $player->step(142285, 'tok');
+
+            self::assertSame($paused, $state->reachRunPaused(142285, 1_829_400), $verb);
+            self::assertSame(! $paused, ($player->lastTurn(142285)['source'] ?? null) === 'reach', "{$verb}: the run " . ($paused ? 'stood down' : 'carried on'));
+        }
+    }
+
+    /**
+     * Helium3 is the outer system's transfer fuel, a Moon turn per six
+     * units: a research combine must never eat it.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testHelium3IsNeverResearchFeedstock(): void
+    {
+        $state = new StateStore($this->statePath);
+        $home = $this->tritonOutOfReach($state, ['credits' => 400_000, 'helium3' => 500, 'salt' => 50]);
+        (new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"combine","args":{"ingredients":{"helium3":1,"salt":1}}}'), $state))->step(142285, 'tok');
+
+        $post = $this->posts[0][1] ?? [];
+        self::assertArrayNotHasKey('helium3', (array) (($post['args'] ?? [])['ingredients'] ?? []), 'not combined away');
+    }
+
+    /**
      * @covers \NHA\Brain\AutoPlayer::worldMark
      */
     public function testTheWorldMarkIgnoresProgressButNotUpdates(): void

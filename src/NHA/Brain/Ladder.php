@@ -1535,8 +1535,11 @@ final class Ladder
             if ($credits >= 200) {
                 return $buy('ion_thruster', 1, 'ship — buy the depot ion_thruster (goes on the jet → orbital_engine)');
             }
-            if (($has('helium3') > 0 || $has('iridium') > 0) && $has('motor') > 0 && $has('chip') > 0) {
-                return $c([($has('helium3') > 0 ? 'helium3' : 'iridium') => 1, 'motor' => 1, 'chip' => 1], 'ship — combine an ion_thruster (fusion fuel + motor + chip)');
+            // Iridium only: helium3 is the outer system's transfer fuel
+            // (3.27.0, {@see ReachRun}), and a craft would burn a Moon turn's
+            // worth of it on something the depot sells.
+            if ($has('iridium') > 0 && $has('motor') > 0 && $has('chip') > 0) {
+                return $c(['iridium' => 1, 'motor' => 1, 'chip' => 1], 'ship — combine an ion_thruster (iridium + motor + chip)');
             }
         }
 

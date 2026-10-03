@@ -50,7 +50,9 @@ flowchart TD
     peek --> sup
     isloop -- no --> sup{"SupplyRun::need — an UNFOUNDED destination needs gear<br/>made from a body resource? &#40;and the run not stood down&#41;"}
     sup -- yes --> supA[["&#128666; SupplyRun::step: pack &#8594; elevator &#8594; shed cargo &#8594; depart &#8594; land &#8594; mine &#8594; make &#8594; shed &#8594; home<br/>submitted directly, source supply"]]
-    sup -- no --> decide[["brain.decide observation, context, stance"]]
+    sup -- no --> reach{"ReachRun::turn — an UNFOUNDED body under the Δv ceiling<br/>that no ship held can reach and come back from? &#40;and the run not stood down&#41;"}
+    reach -- yes --> reachA[["&#128640; ReachRun: build the lander &#8594; ride + land_moon in one tick &#8594; mine helium3 &#8594; ride down<br/>submitted directly, source reach"]]
+    reach -- no --> decide[["brain.decide observation, context, stance"]]
     decide --> plan["respell the model's args &#40;aluminium &#8594; aluminum&#41;<br/>step_done &#8594; state.advancePlan<br/>planDue &#8594; Planner::plan &#40;not awaited; stored when it lands&#41;<br/>holding and the world's mark unchanged &#8594; no call"]
     plan --> waited{decision == null<br/>AND no forced objective?}
     waited -- yes --> recW["record a 'wait'<br/>&#40;visible to detectLoop&#41;"] --> done
@@ -164,6 +166,27 @@ so the gates written for the model's picks do not unpick it. A refusal of its
 own move that shedding cannot fix (no landing gear, too little Δv) stands it
 down for 600 ticks (`SupplyRunStateTrait`); a refusal for uncrated cargo is
 answered by shedding again.
+
+**The reach run** ([`ReachRun`](../src/NHA/Brain/ReachRun.php)). On 2026-09-30
+Triton came down from Δv 320 (past the ceiling of 300 for any ship) to 260 out
+and 250 home. The agent's ships could not make it: the engine's arithmetic
+(`GameData::leg()`, transcribed from `dv_capacity` and the correction gate)
+gives helium3 on an ion drive `loaded·1500 ÷ (mass + 5·loaded)`, so 260 needs a
+load of 1.3 × the ship's mass, and its hulls weighed 600–1,000 with at most 640
+of tank. The run works out, per unfounded body under the ceiling, whether some
+ship held can go and come back on what is held, choosing as `depart` does (the
+most Δv, then the correction gate). If not, it builds `ReachRun::LANDER`:
+cockpit, ion jet, one wing, landing gear and three tanks, mass 295, 600 units,
+273 on full tanks. Then it fetches helium3 for the round trip
+(`GameData::roundTripHelium3()`: 1,058 for Triton, the way back taken as hard
+as the way out). Helium3 is mined only on the Moon, six a turn, and the Moon is
+reached from the top of the sky: `land_moon` refuses anything below altitude
+600, and decay takes two a tick, so the ride and the landing are two intents
+sent back to back to apply in the same tick. It mines 60 past the target, rides
+down, and hands the trip itself to ordinary flight. Helium3 joined
+`FLIGHT_CONSUMABLES`, so no research combine eats it. A refusal stands the run
+down for 600 ticks, except a ride, landing, mine or walk, which it simply makes
+again.
 
 Every draft is reviewed by `Planner::critique()` before it is adopted. It
 flags a body resource ([`GameData::BODY_MINE`](../src/NHA/Brain/GameData.php),

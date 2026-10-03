@@ -53,4 +53,40 @@ trait SupplyRunStateTrait
 
         return is_array($p) ? (string) ($p['reason'] ?? '') : null;
     }
+
+    /**
+     * Stands the reach run ({@see \NHA\Brain\ReachRun}) down, recording the
+     * game's reason. Same rule and window as the supply run's.
+     *
+     * @since 3.27.0
+     */
+    public function pauseReachRun(int $agent_id, int $tick, string $reason): void
+    {
+        $this->data['agent_reach_pause'][(string) $agent_id] = ['tick' => $tick, 'reason' => mb_substr($reason, 0, 240)];
+        $this->save();
+    }
+
+    /**
+     * Whether the reach run is stood down at `$tick`.
+     *
+     * @since 3.27.0
+     */
+    public function reachRunPaused(int $agent_id, int $tick): bool
+    {
+        $p = $this->data['agent_reach_pause'][(string) $agent_id] ?? null;
+
+        return is_array($p) && $tick - (int) ($p['tick'] ?? 0) < self::SUPPLY_PAUSE_TICKS;
+    }
+
+    /**
+     * Why the reach run was last stood down, or null.
+     *
+     * @since 3.27.0
+     */
+    public function reachRunPauseReason(int $agent_id): ?string
+    {
+        $p = $this->data['agent_reach_pause'][(string) $agent_id] ?? null;
+
+        return is_array($p) ? (string) ($p['reason'] ?? '') : null;
+    }
 }

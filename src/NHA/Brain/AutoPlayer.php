@@ -116,10 +116,12 @@ final class AutoPlayer
      * Finished flight consumables — a `combine` that eats one is always a
      * mistake (`cryo_fuel` is the transfer fuel, the shields are one-shot EDL
      * gear), so the guardrail blocks any combine naming one as an ingredient.
-     * `helium3` is deliberately absent: it IS an ion_thruster ingredient.
+     * `helium3` joined in 3.27.0: it is the outer system's transfer fuel, mined
+     * six a turn on the Moon ({@see ReachRun}). The ion_thruster it could be
+     * crafted into is sold at the depot.
      */
     private const FLIGHT_CONSUMABLES = [
-        'cryo_fuel', 'hydrogen', 'heat_shield', 'acid_skin',
+        'cryo_fuel', 'hydrogen', 'heat_shield', 'acid_skin', 'helium3',
         // The outer bodies' entry gear, and the gate crates (3.22.0). The live
         // thermal_core cost a trip to Mars and is the one thing Triton asks
         // for; a research combine must never eat it.
@@ -797,6 +799,42 @@ final class AutoPlayer
     }
 
     /**
+     * This turn's reach-run move ({@see ReachRun}), or null to play the turn as
+     * usual: no body needs one, the run stood down, or nothing it can do now.
+     *
+     * A refusal of the run's own last move stands it down for the supply
+     * run's window, except a move it simply makes again
+     * ({@see ReachRun::RETRY_VERBS}): a Moon landing that missed its tick, or
+     * a ride from the wrong cell.
+     *
+     * @param array<string,mixed>      $raw
+     * @param list<string>             $colonyDone
+     * @param array<string,mixed>|null $last       Last turn's recorded decision.
+     * @param array<string,mixed>      $pre        This turn's prefetch (for last turn's outcome).
+     *
+     * @return array{verb: string, args: array<string,mixed>, why: string, reason: string, then?: array{verb: string, args: array<string,mixed>}}|null
+     *
+     * @since 3.27.0
+     */
+    private function reachTurn(int $agent_id, array $raw, array $colonyDone, int $tick, ?array $last, array $pre): ?array
+    {
+        if ($this->state->reachRunPaused($agent_id, $tick)) {
+            return null;
+        }
+        $oc = (array) ($pre['outcome'] ?? []);
+        if (($last['source'] ?? '') === 'reach' && ($oc['status'] ?? '') === 'rejected'
+            && ! in_array((string) ($last['verb'] ?? ''), ReachRun::RETRY_VERBS, true)
+        ) {
+            $this->state->pauseReachRun($agent_id, $tick, (string) ($oc['result'] ?? ''));
+
+            return null;
+        }
+        $move = ReachRun::turn($raw, $colonyDone, $this->state->unfounded($agent_id));
+
+        return $move === null ? null : $move + ['reason' => "reach run — {$move['why']}"];
+    }
+
+    /**
      * Un-parks every out-of-reach body whose live Δv the engine now says some
      * ship can make, and says so — or null when nothing changed.
      *
@@ -1013,6 +1051,7 @@ final class AutoPlayer
      *  - `override`: a gate replaced it (`proposed` holds what it asked for);
      *  - `loop`: the loop breaker replaced it (`proposed` likewise);
      *  - `ladder`: the model passed and the rules chose;
+     *  - `supply` / `reach`: a scripted run took the turn ({@see SupplyRun}, {@see ReachRun});
      *  - `defence`: combat, decided without asking the model.
      *
      * Empty when the last turn submitted nothing (skipped, waited, failed).
@@ -2055,6 +2094,40 @@ final class AutoPlayer
                         unset($this->planNews[$agent_id]);
 
                         return "🚚 Agent #{$agent_id} supply run → **{$supply['verb']}**{$args}{$ref}\n> {$supply['reason']}{$news}";
+                    });
+            }
+
+            // THE REACH RUN ({@see ReachRun}): a body under the Δv ceiling but
+            // past every ship the agent owns. Fit the lander, fetch helium3 from
+            // the Moon, then leave the trip itself to ordinary flight. Submitted
+            // directly like the supply run; the Moon landing is two intents,
+            // back to back, so both apply in the same tick.
+            if (($reach = $this->reachTurn($agent_id, $rawObs, $colonyDoneNow, $tick, $last, $pre)) !== null) {
+                $altNow = (int) ($observation->get('altitude') ?? 0);
+                $this->lastTurn[$agent_id] = ['tick' => $tick, 'source' => 'reach', 'verb' => $reach['verb']];
+                $then = $reach['then'] ?? null;
+
+                return $this->nha->intentWithToken($agent_id, $token, $reach['verb'], $reach['args'])
+                    ->then(fn($queued) => $then === null ? $queued : $this->nha->intentWithToken($agent_id, $token, $then['verb'], $then['args'])
+                        ->then(static fn() => $queued, static fn() => $queued))
+                    ->then(function ($queued) use ($agent_id, $reach, $then, $tick, $altNow) {
+                        $queuedId = ((array) $queued)['queued_intent'] ?? null;
+                        $this->state->recordDecision($agent_id, [
+                            'verb' => $reach['verb'],
+                            'args' => $reach['args'],
+                            'reason' => $reach['reason'],
+                            'queued_intent' => $queuedId,
+                            'tick' => $tick,
+                            'alt' => $altNow,
+                            'source' => 'reach',
+                        ]);
+                        $args = $reach['args'] === [] ? '' : ' ' . json_encode($reach['args'], JSON_UNESCAPED_SLASHES);
+                        $plus = $then === null ? '' : " + **{$then['verb']}**";
+                        $ref = $queuedId !== null ? " (queued #{$queuedId})" : '';
+                        $news = isset($this->planNews[$agent_id]) ? "\n{$this->planNews[$agent_id]}" : '';
+                        unset($this->planNews[$agent_id]);
+
+                        return "🚀 Agent #{$agent_id} reach run → **{$reach['verb']}**{$args}{$plus}{$ref}\n> {$reach['reason']}{$news}";
                     });
             }
 
