@@ -3754,6 +3754,27 @@ class AutoPlayerTest extends NHAUnitTestCase
     }
 
     /**
+     * Live, 2026-10-10: fuelled for Triton but the thermal_core gone, and
+     * Triton founded by another agent, so the supply run (unfounded only)
+     * never remade it. The agent held for the window for a week.
+     *
+     * @covers \NHA\Brain\AutoPlayer::step
+     */
+    public function testTheSupplyRunServesAFoundedBodyThatNeedsUsOnSite(): void
+    {
+        $state = new StateStore($this->statePath);
+        $this->markDone($state, 142285, ['deimos', 'mars']);
+        $state->recordUnfounded(142285, []);
+        $state->recordPresenceNeeded(142285, ['triton']);
+        $home = $this->season8Stall(['in_space' => false, 'altitude' => 0, 'colony_exists' => true]);
+        $home['inventory'] = ['credits' => 418017, 'heat_shield' => 1, 'copper' => 10, 'metal' => 50, 'salt' => 50, 'silicon' => 50];
+        $player = new AutoPlayer($this->nhaWith($home), $this->brainReturning('{"verb":"mine","args":{"n":15,"resource":"copper"}}'), $state);
+        $player->step(142285, 'tok');
+
+        self::assertSame('supply', $player->lastTurn(142285)['source']);
+    }
+
+    /**
      * A refused part (the depot out of stock, say) stands the run down rather
      * than resubmitting it every turn; a refused ride or Moon landing (a
      * missed tick) does not.

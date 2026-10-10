@@ -770,7 +770,11 @@ final class AutoPlayer
         if ($this->state->supplyRunPaused($agent_id, $tick)) {
             return null;
         }
-        $need = SupplyRun::need($raw, $colonyDone, $this->state->unfounded($agent_id));
+        // Unfounded, or founded with a line only someone on site can fill
+        // (3.27.3: live, Triton's thermal_core was gone and, Triton being
+        // founded by then, nothing remade it; the agent held for a week).
+        $wanted = array_values(array_unique(array_merge($this->state->unfounded($agent_id), $this->state->presenceNeeded($agent_id))));
+        $need = SupplyRun::need($raw, $colonyDone, $wanted);
         if ($need === null) {
             return null;
         }

@@ -6,6 +6,16 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+## [3.27.3] - 2026-10-10
+
+### Fixed
+- **Fuelled for Triton, but held for a week without its thermal_core.** The
+  reach run finished: 1,083 helium3 and a lander that makes Δv 273. But the
+  thermal_core Triton asks for was gone, and the supply run that remakes it
+  served unfounded bodies only. Triton had been founded by another agent, so
+  nothing remade it and every window passed. The supply run now serves the
+  same bodies as the reach run: unfounded, or needing the agent on site.
+
 ## [3.27.2] - 2026-10-03
 
 ### Fixed
