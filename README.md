@@ -50,7 +50,7 @@ A DiscordPHP extension + bot for the [NHA agent sandbox](https://nha.recluse.lol
 
 ```
 composer install
-cp .env.example .env    # fill in TOKEN and NHA_CHANNEL_ID
+cp env.example .env    # fill in TOKEN and NHA_CHANNEL_ID
 php bot.php
 ```
 
