@@ -666,6 +666,7 @@ class Commands
                 (int) ($params['before'] ?? 0),
                 (int) ($params['after'] ?? 0),
                 (int) ($params['before_id'] ?? 0),
+                (int) ($params['agent'] ?? 0),
             ),
             'milestones' => $this->nha->history->getMilestones((int) ($params['limit'] ?? 40)),
             'timeline' => $this->nha->history->getTimeline((int) ($params['limit'] ?? 150)),

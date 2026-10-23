@@ -49,6 +49,57 @@ class NHARepositoryTest extends NHAUnitTestCase
     }
 
     /**
+     * @covers \NHA\Repository\HistoryRepository
+     * @covers \NHA\Repository\AbstractRepositoryTrait
+     */
+    public function testLogCanFilterOneAgentWithoutLosingThePagingCursor(): void
+    {
+        $nha = $this->withHttpResponse(['rows' => [], 'has_more' => false], 'log?limit=10&kind=intent&before=200&after=100&before_id=50&agent=42');
+        $resolved = null;
+        $nha->history->getLog(10, 'intent', 200, 100, 50, 42)->then(function ($log) use (&$resolved) {
+            $resolved = $log;
+        });
+
+        $this->assertInstanceOf(\NHA\Parts\Log::class, $resolved);
+    }
+
+    public function testLogStillDefaultsToAllAgents(): void
+    {
+        $nha = $this->withHttpResponse(['rows' => []], 'log?limit=60');
+        $resolved = null;
+        $nha->history->getLog()->then(function ($log) use (&$resolved) {
+            $resolved = $log;
+        });
+
+        $this->assertInstanceOf(\NHA\Parts\Log::class, $resolved);
+    }
+
+    /** @dataProvider observationTokens */
+    public function testObservationCredentialsUseHeadersOnly(string $ambient, string $explicit, array $headers): void
+    {
+        $http = $this->getMockBuilder(Http::class)->disableOriginalConstructor()->onlyMethods(['get'])->getMock();
+        $http->expects($this->once())->method('get')->with(
+            $this->callback(fn($endpoint) => (string) $endpoint === 'observe/42'),
+            null,
+            $headers,
+        )->willReturn(resolve([]));
+        $nha = $this->getNha();
+        (new \ReflectionProperty(NHA::class, 'nha_http'))->setValue($nha, $http);
+        $nha->setAgentToken($ambient);
+
+        $nha->observe(42, $explicit);
+    }
+
+    public static function observationTokens(): array
+    {
+        return [
+            'public observation' => ['', '', []],
+            'configured identity' => ['ambient-fixture', '', ['X-Agent-Token' => 'ambient-fixture']],
+            'explicit identity wins' => ['ambient-fixture', 'explicit-fixture', ['X-Agent-Token' => 'explicit-fixture']],
+        ];
+    }
+
+    /**
      * @covers \NHA\Repository\WorldRepository
      * @covers \NHA\Repository\AbstractRepositoryTrait
      */

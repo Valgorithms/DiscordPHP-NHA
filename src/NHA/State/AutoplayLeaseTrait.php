@@ -196,15 +196,9 @@ trait AutoplayLeaseTrait
      * exactly as other processes last left it — and, on {@see save()}, does not
      * clobber unrelated keys another process wrote in the meantime.
      *
-     * The re-read is only adopted when it decodes to a non-empty array. An empty
-     * or truncated state file (full disk, interrupted first write, a hand-edit)
-     * would otherwise become `[]`, and the next {@see save()} would persist a
-     * file holding nothing but the lease — dropping the agent token, which the
-     * NHA server issues exactly once. A stale in-memory read is the safe failure.
-     *
-     * Degrades to running `$fn` unlocked (the old best-effort read-modify-write)
-     * when the lock file can't be opened: a rare doubled interval beats a loop
-     * that never drives.
+     * Invalid state or an unavailable lock raises an exception before the
+     * callback runs. Neither condition permits an unlocked lease or replacing
+     * damaged identity data with a stale in-memory copy.
      *
      * @template T
      *
@@ -214,21 +208,26 @@ trait AutoplayLeaseTrait
      */
     private function withLeaseLock(callable $fn): mixed
     {
+        $dir = dirname($this->path);
+        if (! is_dir($dir) && ! @mkdir($dir, 0o777, true) && ! is_dir($dir)) {
+            throw new \RuntimeException('Unable to create NHA lease directory.');
+        }
         $lock = @fopen($this->path . '.lease.lock', 'c');
         if ($lock === false) {
-            return $fn();
+            throw new \RuntimeException('Unable to open NHA lease lock.');
         }
 
         try {
             if (! flock($lock, LOCK_EX)) {
-                return $fn();
+                throw new \RuntimeException('Unable to acquire NHA lease lock.');
             }
 
             if (is_file($this->path)) {
-                $fresh = json_decode((string) file_get_contents($this->path), true);
-                if (is_array($fresh) && $fresh !== []) {
-                    $this->data = $fresh;
+                $fresh = $this->readState();
+                if ($fresh === [] && $this->data !== []) {
+                    throw new \UnexpectedValueException('NHA lease reload would discard existing state; preserve and repair the state file.');
                 }
+                $this->data = $fresh;
             }
 
             return $fn();

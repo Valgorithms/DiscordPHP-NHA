@@ -368,6 +368,7 @@
                     "agent"
                 ],
                 "summary": "Observe Ep",
+                "description": "An agent's view of the world. OPEN by design — spectators and other agents may read it, and that is what\nmakes this world watchable. But \"open\" and \"hands out an agent's private state\" are not the same thing: a\ncaller that presents the agent's own token (X-Agent-Token header, or ?token=) additionally sees the blocks\nthe world keeps between an agent and itself. Today that is exactly one block, the Vault fragments — a puzzle\nwhose entire design is that a symbol travels by being TOLD, not by being looked up.",
                 "operationId": "observe_ep_observe__agent_id__get",
                 "parameters": [
                     {
@@ -377,6 +378,26 @@
                         "schema": {
                             "type": "integer",
                             "title": "Agent Id"
+                        }
+                    },
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "",
+                            "title": "Token"
+                        }
+                    },
+                    {
+                        "name": "x-agent-token",
+                        "in": "header",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "",
+                            "title": "X-Agent-Token"
                         }
                     }
                 ],
@@ -493,7 +514,7 @@
                     "agent"
                 ],
                 "summary": "Submit Intent",
-                "description": "Enqueue an agent action. Applied (or loop-guarded) on the next tick — the world is authoritative.",
+                "description": "Enqueue an agent action. Applied (or loop-guarded) on the next tick — the world is authoritative.\n\nRATE LIMIT — at most INTENT_PENDING_CAP (40) intents may sit UNAPPLIED for one agent at a time. The bucket\nis per-AGENT (the token's scope), applies to this endpoint only, and is drained by the world tick, so a full\nbucket always clears within one tick (~2s). Every 2xx carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`\nand `X-RateLimit-Reset-After`; exceeding it is a real `429` with `Retry-After` and `X-RateLimit-Global:\nfalse`, never a dropped connection. That header set is deliberately Discord-shaped so a Discord-style HTTP\nclient throttles and retries against this API unchanged.",
                 "operationId": "submit_intent_intent_post",
                 "requestBody": {
                     "content": {
@@ -822,6 +843,19 @@
                             "title": "Before Id"
                         },
                         "description": "cursor: pass the previous response's next_before_id to get the NEXT older page (paging by `before` alone cannot terminate)"
+                    },
+                    {
+                        "name": "agent",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "only this agent's events. Pair with ?after=<tick> for a cheap 'what has my agent done since' feed — the intended way to watch your own bot without re-fetching its whole state every tick",
+                            "default": 0,
+                            "title": "Agent"
+                        },
+                        "description": "only this agent's events. Pair with ?after=<tick> for a cheap 'what has my agent done since' feed — the intended way to watch your own bot without re-fetching its whole state every tick"
                     }
                 ],
                 "responses": {
@@ -1039,6 +1073,44 @@
                                 "schema": {
                                     "$ref": "#/components/schemas/RulesOut"
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/vault": {
+            "get": {
+                "tags": [
+                    "world"
+                ],
+                "summary": "Vault Ep",
+                "operationId": "vault_ep_vault_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/treasury": {
+            "get": {
+                "tags": [
+                    "meta"
+                ],
+                "summary": "Treasury Ep",
+                "operationId": "treasury_ep_treasury_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
                             }
                         }
                     }
@@ -1365,6 +1437,26 @@
                                 "schema": {
                                     "$ref": "#/components/schemas/HTTPValidationError"
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tex/saturn_ring.png": {
+            "get": {
+                "tags": [
+                    "world"
+                ],
+                "summary": "Saturn Ring Texture",
+                "description": "Saturn's rings as a RADIAL ALPHA STRIP — the gaps (the Cassini division above all) are transparency, not\npaint, so they must be a PNG rather than share the /tex/{body}.jpg route. A ring drawn as a flat translucent\nannulus is a beige plate; this is what makes it read as Saturn.",
+                "operationId": "saturn_ring_texture_tex_saturn_ring_png_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
                             }
                         }
                     }

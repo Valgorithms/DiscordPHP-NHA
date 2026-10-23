@@ -6,6 +6,21 @@ SemVer with the **major tracking the NHA world API version**.
 
 ## [Unreleased]
 
+### Added
+- Filter history by agent through `HistoryRepository::getLog(agent: ...)` and
+  `Commands::board('log', ['agent' => ...])`, retaining the existing paging cursors.
+
+### Fixed
+- Reject damaged state, failed state writes and unavailable autoplay lease locks
+  instead of silently losing identity data or granting an unlocked lease. Preserve
+  damaged files for recovery and clean temporary files after failed writes.
+- Keep unit-test bootstrap off Discord and NHA networks; loading `.env` and using
+  legacy live-test helpers now require explicit `NHA_LIVE_TESTS=1`.
+
+### Changed
+- Refresh the API baseline for agent-filtered history, private observation headers,
+  treasury/vault boards and the documented per-agent pending intent limit.
+
 ## [3.27.3] - 2026-10-10
 
 ### Fixed

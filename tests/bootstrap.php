@@ -11,9 +11,9 @@
 
 include __DIR__ . '/../vendor/autoload.php';
 
-// Load local .env into environment if present (simple loader, no extra deps)
+// Credentials are loaded only for explicitly requested live integration work.
 $envPath = __DIR__ . '/../.env';
-if (file_exists($envPath)) {
+if (getenv('NHA_LIVE_TESTS') === '1' && file_exists($envPath)) {
     $env = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($env as $line) {
         $line = trim($line);
@@ -39,6 +39,7 @@ if (file_exists($envPath)) {
 }
 
 include_once __DIR__ . '/NHAUnitTestCase.php';
+include_once __DIR__ . '/OfflineNha.php';
 include_once __DIR__ . '/functions.php';
 include_once __DIR__ . '/NHASingleton.php';
 include_once __DIR__ . '/NHATestCase.php';

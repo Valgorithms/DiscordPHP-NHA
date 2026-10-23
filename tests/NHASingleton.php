@@ -24,6 +24,9 @@ class NHASingleton
      */
     public static function get()
     {
+        if (getenv('NHA_LIVE_TESTS') !== '1') {
+            throw new \LogicException('Live NHA tests require explicit NHA_LIVE_TESTS=1.');
+        }
         if (! self::$nha) {
             self::new_cache();
         }
