@@ -16,6 +16,8 @@ SemVer with the **major tracking the NHA world API version**.
   damaged files for recovery and clean temporary files after failed writes.
 - Keep unit-test bootstrap off Discord and NHA networks; loading `.env` and using
   legacy live-test helpers now require explicit `NHA_LIVE_TESTS=1`.
+- Use the Discord `TOKEN` in live-test helpers instead of sending the agent's
+  `NHA_TOKEN` as a Discord credential.
 
 ### Changed
 - Refresh the API baseline for agent-filtered history, private observation headers,

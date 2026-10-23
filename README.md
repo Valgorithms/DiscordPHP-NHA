@@ -78,7 +78,8 @@ Omitting `agent` (or using `0`) reads all agents as before.
 
 Run `composer unit` for the fixture-based suite. Its mock client uses an in-memory Discord bootstrap and
 rejects unmatched NHA requests without a network driver. It does not load `.env` by default. Legacy live-test
-helpers require the explicit test-only environment flag `NHA_LIVE_TESTS=1`; use them only with authorization
+helpers require the explicit test-only environment flag `NHA_LIVE_TESTS=1` and Discord bot `TOKEN`
+(the agent's `NHA_TOKEN` is separate); use them only with authorization
 for the Discord destination and game actions involved.
 
 ### Standalone binaries

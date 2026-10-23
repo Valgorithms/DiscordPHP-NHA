@@ -25,6 +25,26 @@ class OfflineNhaTest extends NHAUnitTestCase
         $this->assertSame('123456789', $nha->getClient()->application->id);
     }
 
+    public function testAnAgentTokenCannotEnableTheDiscordLiveHelper(): void
+    {
+        $previous = [];
+        foreach (['NHA_LIVE_TESTS', 'TOKEN', 'NHA_TOKEN'] as $key) {
+            $previous[$key] = getenv($key);
+        }
+        putenv('NHA_LIVE_TESTS=1');
+        putenv('TOKEN');
+        putenv('NHA_TOKEN=agent-fixture');
+        try {
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage('Discord bot TOKEN');
+            NHASingleton::get();
+        } finally {
+            foreach ($previous as $key => $value) {
+                $value === false ? putenv($key) : putenv($key . '=' . $value);
+            }
+        }
+    }
+
     public function testAnUnmockedNhaCallRejectsWithoutADriver(): void
     {
         $error = null;
