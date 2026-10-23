@@ -103,10 +103,11 @@ class HistoryRepository extends AbstractRepository
      * @param int    $before    Only rows before this tick; 0 (default) to disable.
      * @param int    $after     Only rows after this tick; 0 (default) to disable.
      * @param int    $before_id Cursor from a previous response's `next_before_id`.
+     * @param int    $agent     Only this agent's events; 0 (default) for all agents.
      *
      * @return PromiseInterface<Log>
      */
-    public function getLog(int $limit = 60, string $kind = '', int $before = 0, int $after = 0, int $before_id = 0): PromiseInterface
+    public function getLog(int $limit = 60, string $kind = '', int $before = 0, int $after = 0, int $before_id = 0, int $agent = 0): PromiseInterface
     {
         $endpoint = Endpoint::bind(Endpoint::LOG);
         $endpoint->addQuery('limit', $limit);
@@ -122,6 +123,9 @@ class HistoryRepository extends AbstractRepository
         }
         if ($before_id > 0) {
             $endpoint->addQuery('before_id', $before_id);
+        }
+        if ($agent > 0) {
+            $endpoint->addQuery('agent', $agent);
         }
 
         return $this->fetchOut(Log::class, $endpoint);

@@ -63,7 +63,7 @@ class StateStore
      */
     public function __construct(protected readonly string $path)
     {
-        $this->data = is_file($path) ? (array) json_decode(file_get_contents($path), true) : [];
+        $this->data = $this->readState();
 
         // Sweep any temp file orphaned by a previous crash mid-{@see save()}.
         foreach (glob($path . '.*.tmp') ?: [] as $stale) {
@@ -74,21 +74,52 @@ class StateStore
     /**
      * Atomically persists the current state: writes a sibling temp file then
      * renames it over the target, so a crash (or SIGTERM) mid-write can never
-     * leave a truncated file. Silently no-ops if the temp write fails.
+     * leave a truncated file. Encoding and filesystem errors are surfaced to
+     * the caller; a failed save must not be mistaken for a durable identity.
      */
     protected function save(): void
     {
+        $json = json_encode($this->data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $dir = dirname($this->path);
-        if (! is_dir($dir)) {
-            mkdir($dir, 0o777, true);
+        if (! is_dir($dir) && ! @mkdir($dir, 0o777, true) && ! is_dir($dir)) {
+            throw new \RuntimeException('Unable to create NHA state directory.');
         }
 
         // Write to a sibling temp file then rename, so a crash (or a SIGTERM
         // mid-write) can never leave a truncated / half-written state file.
         $tmp = $this->path . '.' . getmypid() . '.tmp';
-        if (file_put_contents($tmp, json_encode($this->data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
-            return;
+        try {
+            if (@file_put_contents($tmp, $json) !== strlen($json)) {
+                throw new \RuntimeException('Unable to write complete NHA state.');
+            }
+            if (! @rename($tmp, $this->path)) {
+                throw new \RuntimeException('Unable to replace NHA state file.');
+            }
+        } finally {
+            if (is_file($tmp)) {
+                @unlink($tmp);
+            }
         }
-        @rename($tmp, $this->path);
+    }
+
+    /** Reads existing state without interpreting damaged identity data as a fresh start. */
+    protected function readState(): array
+    {
+        if (! file_exists($this->path)) {
+            return [];
+        }
+        if (! is_file($this->path) || ($json = @file_get_contents($this->path)) === false) {
+            throw new \RuntimeException('Unable to read NHA state file.');
+        }
+        try {
+            $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \UnexpectedValueException('Invalid JSON in NHA state file; preserve and repair it before restarting.');
+        }
+        if (! is_array($data)) {
+            throw new \UnexpectedValueException('NHA state file must contain a JSON object or array.');
+        }
+
+        return $data;
     }
 }

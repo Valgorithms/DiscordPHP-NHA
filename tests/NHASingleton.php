@@ -24,6 +24,12 @@ class NHASingleton
      */
     public static function get()
     {
+        if (getenv('NHA_LIVE_TESTS') !== '1') {
+            throw new \LogicException('Live NHA tests require explicit NHA_LIVE_TESTS=1.');
+        }
+        if (! getenv('TOKEN')) {
+            throw new \LogicException('Live NHA tests require the Discord bot TOKEN; NHA_TOKEN is an agent credential.');
+        }
         if (! self::$nha) {
             self::new_cache();
         }
@@ -42,15 +48,11 @@ class NHASingleton
         $logger->pushHandler($handler);
 
         $nha = new NHA([
-            'token' => (string) (getenv('NHA_TOKEN') ?: ''),
+            'token' => (string) getenv('TOKEN'),
+            'nha_token' => (string) (getenv('NHA_TOKEN') ?: ''),
             'loop' => $loop,
             'logger' => $logger,
         ]);
-
-        // For unit tests, we might want to trigger 'init' immediately if no token is provided
-        if (empty(getenv('NHA_TOKEN'))) {
-            $nha->emit('init', [$nha]);
-        }
 
         $e = null;
 
@@ -81,14 +83,10 @@ class NHASingleton
         $logger->pushHandler($handler);
 
         $nha = new NHA([
-            'token' => (string) (getenv('NHA_TOKEN') ?: ''),
+            'token' => (string) getenv('TOKEN'),
+            'nha_token' => (string) (getenv('NHA_TOKEN') ?: ''),
             'logger' => $logger,
         ]);
-
-        if (empty(getenv('NHA_TOKEN'))) {
-            // Immediate init for unit tests without a real token
-            $nha->emit('init', [$nha]);
-        }
 
         $e = null;
 

@@ -38,7 +38,93 @@ class StateStoreTest extends NHAUnitTestCase
 
     /**
      * @covers \NHA\StateStore
+     *
+     * @dataProvider invalidStateFiles
      */
+    public function testInvalidExistingStateIsRejectedWithoutOverwritingIt(string $contents): void
+    {
+        mkdir(dirname($this->path));
+        file_put_contents($this->path, $contents);
+
+        try {
+            new StateStore($this->path);
+            $this->fail('Invalid state must not be treated as a fresh identity.');
+        } catch (\UnexpectedValueException $e) {
+            $this->assertStringNotContainsString('private-fixture-token', $e->getMessage());
+            $this->assertSame($contents, file_get_contents($this->path));
+        }
+    }
+
+    public static function invalidStateFiles(): array
+    {
+        return [['{"token":"private-fixture-token",'], [''], ['null'], ['42'], ['"private-fixture-token"']];
+    }
+
+    public function testValidEmptyStateStillLoads(): void
+    {
+        mkdir(dirname($this->path));
+        foreach (['{}', '[]'] as $contents) {
+            file_put_contents($this->path, $contents);
+            $this->assertNull((new StateStore($this->path))->getDefaultAgent());
+        }
+    }
+
+    public function testAValidFreshEmptyStateCanAcquireALease(): void
+    {
+        mkdir(dirname($this->path));
+        file_put_contents($this->path, '{}');
+        $store = new StateStore($this->path);
+
+        $this->assertTrue($store->acquireAutoplayLease('fresh-fixture'));
+        $this->assertSame('fresh-fixture', (new StateStore($this->path))->autoplayLeaseHolder());
+    }
+
+    public function testFailedEncodingPreservesThePreviousState(): void
+    {
+        $store = new StateStore($this->path);
+        $store->setDefaultAgent(42, 'fixture-token');
+        $before = file_get_contents($this->path);
+
+        try {
+            $store->setDefaultAgent(42, "invalid-\xB1");
+            $this->fail('Encoding errors must be surfaced.');
+        } catch (\JsonException $e) {
+            $this->assertSame($before, file_get_contents($this->path));
+            $this->assertSame('fixture-token', (new StateStore($this->path))->getDefaultAgentToken());
+        }
+    }
+
+    public function testFailedReplacementIsReportedAndCleansItsTemporaryFile(): void
+    {
+        $store = new StateStore($this->path);
+        mkdir($this->path, 0o777, true);
+
+        try {
+            $store->setDefaultAgent(42);
+            $this->fail('A failed replacement must not report a saved identity.');
+        } catch (\RuntimeException $e) {
+            $this->assertDirectoryExists($this->path);
+            $this->assertSame([], glob($this->path . '.*.tmp'));
+        } finally {
+            rmdir($this->path);
+        }
+    }
+
+    public function testUnavailableLeaseLockDoesNotGrantAnUnlockedLease(): void
+    {
+        $store = new StateStore($this->path);
+        mkdir($this->path . '.lease.lock', 0o777, true);
+
+        try {
+            $store->acquireAutoplayLease('audit-fixture');
+            $this->fail('A lease requires its exclusive lock.');
+        } catch (\RuntimeException $e) {
+            $this->assertFileDoesNotExist($this->path);
+        } finally {
+            rmdir($this->path . '.lease.lock');
+        }
+    }
+
     public function testSetDefaultAgentPersistsToDisk(): void
     {
         $store = new StateStore($this->path);
@@ -307,7 +393,7 @@ class StateStoreTest extends NHAUnitTestCase
      *
      * @dataProvider corruptStateFiles
      */
-    public function testLeaseReReadDoesNotAdoptAnEmptyOrInvalidStateFile(string $corrupt): void
+    public function testLeaseReReadRejectsAnEmptyOrInvalidStateFileWithoutReplacingIt(string $corrupt): void
     {
         $store = new StateStore($this->path);
         $store->setDefaultAgent(142285, 'once-only-token');
@@ -315,12 +401,14 @@ class StateStoreTest extends NHAUnitTestCase
 
         // The file goes bad between turns; the next acquire re-reads it under lock.
         file_put_contents($this->path, $corrupt);
-        $store->acquireAutoplayLease('bot.php:1', 15);
-
-        $reloaded = new StateStore($this->path);
-        $this->assertSame(142285, $reloaded->getDefaultAgent(), 'the agent id survived');
-        $this->assertSame('once-only-token', $reloaded->getDefaultAgentToken(), 'the once-only token survived');
-        $this->assertSame('bot.php:1', $reloaded->autoplayLeaseHolder(), 'and the lease is still held');
+        try {
+            $store->acquireAutoplayLease('bot.php:1', 15);
+            $this->fail('Damaged state must not permit lease renewal.');
+        } catch (\UnexpectedValueException $e) {
+            $this->assertSame($corrupt, file_get_contents($this->path), 'preserve the damaged file for recovery');
+            $this->assertSame(142285, $store->getDefaultAgent(), 'retain the in-memory identity');
+            $this->assertSame('once-only-token', $store->getDefaultAgentToken());
+        }
     }
 
     /** @return array<string, array{string}> */

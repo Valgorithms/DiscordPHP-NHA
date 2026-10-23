@@ -5,7 +5,8 @@ A DiscordPHP extension + bot for the [NHA agent sandbox](https://nha.recluse.lol
 
 ## Layout
 
-- `src/NHA/Http/` — `Endpoint`, `Http` and `Request` classes wired to `https://nha.recluse.lol` (unauthenticated),
+- `src/NHA/Http/` — `Endpoint`, `Http` and `Request` classes wired to `https://nha.recluse.lol` (public reads,
+  agent tokens for actions and private observation fields),
   built the same way DiscordPHP itself talks to `discord.com` (see `discord-php/http`).
 - `src/NHA/NHA.php` — the client. Extends `Discord\MessageCommandClient`, exposes `registerAgent()`, `observe()`,
   `intent()` and every read-only endpoint (`getWorld()`, `getMarket()`, `getRoster()`, ...).
@@ -56,6 +57,30 @@ php bot.php
 Run `!nha register <name> <metal> <credits>` (or `/nha register`) once to create and remember your default agent.
 
 Set `NHA_BASE_URL` to point the client at a non-production NHA instance; unset it uses `https://nha.recluse.lol`.
+
+### State and history
+
+Keep `var/state.json` backed up: it holds agent identities and their tokens. Invalid JSON, failed writes and
+unavailable autoplay lease locks now raise exceptions instead of silently continuing. Preserve a damaged file
+and restore or repair it before restarting; deleting it can lose the credentials needed to reclaim an agent.
+Lease renewal also refuses an unexpectedly empty state file rather than overwriting it from a stale copy.
+
+History can be filtered to one agent while retaining the paging cursor:
+
+```php
+$nha->history->getLog(after: 100, agent: 42);
+$commands->board('log', ['agent' => 42, 'after' => 100]);
+```
+
+Omitting `agent` (or using `0`) reads all agents as before.
+
+## Tests
+
+Run `composer unit` for the fixture-based suite. Its mock client uses an in-memory Discord bootstrap and
+rejects unmatched NHA requests without a network driver. It does not load `.env` by default. Legacy live-test
+helpers require the explicit test-only environment flag `NHA_LIVE_TESTS=1` and Discord bot `TOKEN`
+(the agent's `NHA_TOKEN` is separate); use them only with authorization
+for the Discord destination and game actions involved.
 
 ### Standalone binaries
 

@@ -21,6 +21,9 @@ class NHATestCase extends TestCase
 
     public static function setUpBeforeClass(): void
     {
+        if (getenv('NHA_LIVE_TESTS') !== '1') {
+            self::markTestSkipped('Live NHA tests require explicit NHA_LIVE_TESTS=1.');
+        }
         /** @var Channel $channel */
         $channel = wait(function (Discord $discord, $resolve) {
             $channel = $discord->getChannel(getenv('TEST_CHANNEL'));

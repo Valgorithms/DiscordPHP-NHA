@@ -70,6 +70,16 @@ class CommandsTest extends NHAUnitTestCase
     /**
      * @covers \NHA\Commands
      */
+    public function testLogBoardForwardsAgentAndPagingFilters(): void
+    {
+        $commands = $this->commands(['rows' => [], 'has_more' => false]);
+        $commands->board('log', ['agent' => 42, 'after' => 100, 'before_id' => 50]);
+
+        $this->assertSame('get', $this->calls[0][0]);
+        $this->assertSame('log?limit=60&after=100&before_id=50&agent=42', $this->calls[0][1]);
+    }
+
+    /** @covers \NHA\Commands */
     public function testQueueVerbSurfacesQueuedIntentId(): void
     {
         $commands = $this->commands();

@@ -66,5 +66,5 @@ function wait(callable $callback, float $timeout = TIMEOUT, ?callable $timeoutFn
 
 function getMockNha(): NHA
 {
-    return new NHA(['token' => '', 'logger' => new NullLogger()]);
+    return new OfflineNha(['token' => '', 'logger' => new NullLogger()]);
 }
