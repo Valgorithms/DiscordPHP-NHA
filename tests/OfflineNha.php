@@ -17,6 +17,9 @@ class OfflineNha extends NHA
 
     public function __construct(array $options = [])
     {
+        // Parent constructors still allocate unused socket connectors. Disable
+        // them, including blocking Windows DNS discovery, for this fixture.
+        $options['socket_options'] = ['dns' => false, 'tcp' => false, 'tls' => false, 'unix' => false];
         parent::__construct($options);
         $this->nha_http = new \NHA\Http\Http('', $this->loop, $this->logger);
     }
