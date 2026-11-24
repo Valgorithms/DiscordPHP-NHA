@@ -40,8 +40,25 @@ jobs:
           find src tests bot.php autoplay.php play_nha.php -name '*.php' -print0 \
             | xargs -0 -n1 -P4 php -l > /dev/null
 
+      - name: DNS transport fixture
+        run: php tests/windows-dns.php
+
       - name: PHPUnit
         run: composer unit
 
       - name: Code style (php-cs-fixer)
         run: vendor/bin/php-cs-fixer fix --dry-run --diff
+
+
+  windows-dns:
+    name: Windows DNS transport fixture
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, zlib
+          coverage: none
+      - run: composer install --no-dev --no-plugins --no-scripts --no-interaction --prefer-dist
+      - run: php tests/windows-dns.php

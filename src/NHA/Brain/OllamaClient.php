@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace NHA\Brain;
 
+use NHA\Http\ReactBrowser;
 use Psr\Http\Message\ResponseInterface;
 use React\EventLoop\LoopInterface;
 use React\Http\Browser;
@@ -168,7 +169,7 @@ final class OllamaClient
     private static function browserTransport(float $timeout, ?LoopInterface $loop): callable
     {
         // Keep error responses so the server's `{"error": ...}` body is readable.
-        $browser = (new Browser($loop))
+        $browser = ReactBrowser::create($loop)
             ->withTimeout($timeout)
             ->withRejectErrorResponse(false);
 

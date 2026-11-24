@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use Discord\Http\Drivers\Guzzle;
 use NHA\Http\Http;
+use NHA\Http\ReactBrowser;
 use NHA\Upstream\Drift;
 use NHA\Upstream\GitHub;
 use NHA\Upstream\Snapshot;
 use NHA\Upstream\Watcher;
 use Psr\Log\NullLogger;
 use React\EventLoop\Loop;
-use React\Http\Browser;
 
 /**
  * The baseline written by `--accept` must read back as exactly what was
@@ -41,7 +41,7 @@ class WatcherTest extends NHAUnitTestCase
     {
         $loop = Loop::get();
 
-        return new Watcher(new Http('', $loop, new NullLogger(), new Guzzle($loop)), new GitHub(new Browser(null, $loop)), $this->dir . '/upstream', $this->dir . '/openapi.json');
+        return new Watcher(new Http('', $loop, new NullLogger(), new Guzzle($loop)), new GitHub(ReactBrowser::create($loop)), $this->dir . '/upstream', $this->dir . '/openapi.json');
     }
 
     public function testAnAcceptedServerComparesClean(): void
