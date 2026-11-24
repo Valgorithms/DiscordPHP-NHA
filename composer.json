@@ -27,8 +27,10 @@
     "require": {
         "php": "^8.3",
         "team-reflex/discord-php": "dev-master",
-        "discord-php/http": "dev-master as 10.9.8",
-        "guzzlehttp/guzzle": "^7.9"
+        "discord-php/http": "^10.9.10",
+        "guzzlehttp/guzzle": "^7.9",
+        "react/http": "^1.11",
+        "react/socket": "^1.17"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3",

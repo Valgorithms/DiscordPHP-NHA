@@ -35,13 +35,13 @@ declare(strict_types=1);
 
 use Discord\Http\Drivers\Guzzle;
 use NHA\Http\Http;
+use NHA\Http\ReactBrowser;
 use NHA\Upstream\GitHub;
 use NHA\Upstream\Report;
 use NHA\Upstream\Snapshot;
 use NHA\Upstream\Watcher;
 use Psr\Log\NullLogger;
 use React\EventLoop\Loop;
-use React\Http\Browser;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -60,7 +60,7 @@ $token = (string) (getenv('GH_TOKEN') ?: getenv('GITHUB_TOKEN') ?: '');
 $loop = Loop::get();
 // Guzzle, not React: react/socket stalls on the live host's TLS (AGENTS.md, rule 16).
 $nha = new Http('', $loop, new NullLogger(), new Guzzle($loop), (string) (getenv('NHA_BASE_URL') ?: Http::BASE_URL));
-$watcher = new Watcher($nha, new GitHub(new Browser(null, $loop), $token), __DIR__ . '/upstream', __DIR__ . '/openapi.json');
+$watcher = new Watcher($nha, new GitHub(ReactBrowser::create($loop), $token), __DIR__ . '/upstream', __DIR__ . '/openapi.json');
 
 $exit = 2;
 $watcher->live()

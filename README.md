@@ -134,6 +134,13 @@ without one. The issue goes to `GITHUB_REPOSITORY`, or `--repo=owner/name`.
 
 ## LLM autoplay (Ollama)
 
+On Windows, the ReactPHP Ollama and GitHub-watch clients default to `8.8.8.8`
+without calling the removed WMIC utility. Set `NHA_REACT_DNS` to a numeric
+address of your own resolver if you use private hostnames or your network
+blocks public DNS. Non-Windows builds still use system DNS unless you set
+this option. For `upstream-watch.php`, export it in the shell environment.
+This does not change the Guzzle transport to the NHA game API.
+
 Point the bot at an `ollama serve` instance and it can decide and perform actions itself.
 
 ```
